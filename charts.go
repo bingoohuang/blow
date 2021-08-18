@@ -234,12 +234,7 @@ func openBrowser(url string) bool {
 			cmds = append(cmds, []string{"xdg-open"})
 		}
 	}
-	cmds = append(cmds,
-		[]string{"chrome"},
-		[]string{"google-chrome"},
-		[]string{"chromium"},
-		[]string{"firefox"},
-	)
+	cmds = append(cmds, []string{"chrome"}, []string{"google-chrome"}, []string{"chromium"}, []string{"firefox"})
 	for _, args := range cmds {
 		cmd := exec.Command(args[0], append(args[1:], url)...)
 		if cmd.Start() == nil && appearsSuccessful(cmd, 3*time.Second) {

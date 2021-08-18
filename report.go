@@ -73,6 +73,7 @@ type StreamReport struct {
 	latencyHistogram *histogram.Histogram
 	codes            map[string]int64
 	errors           map[string]int64
+	conns            map[string]struct{}
 
 	latencyWithinSec *Stats
 	rpsWithinSec     float64
@@ -80,16 +81,18 @@ type StreamReport struct {
 
 	readBytes  int64
 	writeBytes int64
+	totalConns int64
 
 	doneChan chan struct{}
 }
 
-func NewStreamReport() *StreamReport {
+func NewStreamReport(maxConns int) *StreamReport {
 	return &StreamReport{
 		latencyQuantile:  quantile.NewTargeted(quantilesTarget),
 		latencyHistogram: histogram.New(8),
 		codes:            make(map[string]int64, 1),
 		errors:           make(map[string]int64, 1),
+		conns:            make(map[string]struct{}, maxConns),
 		doneChan:         make(chan struct{}, 1),
 		latencyStats:     &Stats{},
 		rpsStats:         &Stats{},
@@ -145,10 +148,16 @@ func (s *StreamReport) Collect(records <-chan *ReportRecord) {
 		latencyWithinSecTemp.Update(float64(r.cost))
 		s.insert(float64(r.cost))
 		if r.code != "" {
-			s.codes[r.code] ++
+			s.codes[r.code]++
 		}
 		if r.error != "" {
-			s.errors[r.error] ++
+			s.errors[r.error]++
+		}
+		if r.conn != "" {
+			if _, ok := s.conns[r.conn]; !ok {
+				s.totalConns++
+				s.conns[r.conn] = struct{}{}
+			}
 		}
 		s.readBytes = r.readBytes
 		s.writeBytes = r.writeBytes
@@ -165,6 +174,7 @@ type SnapshotReport struct {
 	RPS             float64
 	ReadThroughput  float64
 	WriteThroughput float64
+	Connections     int64
 
 	Stats *struct {
 		Min    time.Duration
@@ -219,6 +229,7 @@ func (s *StreamReport) Snapshot() *SnapshotReport {
 	rs.RPS = float64(rs.Count) / elapseInSec
 	rs.ReadThroughput = float64(s.readBytes) / 1024.0 / 1024.0 / elapseInSec
 	rs.WriteThroughput = float64(s.writeBytes) / 1024.0 / 1024.0 / elapseInSec
+	rs.Connections = s.totalConns
 
 	rs.Codes = make(map[string]int64, len(s.codes))
 	for k, v := range s.codes {

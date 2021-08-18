@@ -2,39 +2,42 @@ package main
 
 import (
 	"fmt"
+	"gopkg.in/alecthomas/kingpin.v3-unstable"
 	"io/ioutil"
 	"net"
 	"os"
 	"strings"
-
-	"gopkg.in/alecthomas/kingpin.v3-unstable"
 )
 
 var (
-	concurrency = kingpin.Flag("concurrency", "Number of connections to run concurrently").Short('c').Default("1").Int()
-	requests    = kingpin.Flag("requests", "Number of requests to run").Short('n').Default("-1").Int64()
-	duration    = kingpin.Flag("duration", "Duration of test, examples: -d 10s -d 3m").Short('d').PlaceHolder("DURATION").Duration()
-	interval    = kingpin.Flag("interval", "Print snapshot result every interval, use 0 to print once at the end").Short('i').Default("200ms").Duration()
-	seconds     = kingpin.Flag("seconds", "Use seconds as time unit to print").Bool()
+	flag = kingpin.Flag
 
-	body        = kingpin.Flag("body", "HTTP request body, if start the body with @, the rest should be a filename to read").Short('b').String()
-	stream      = kingpin.Flag("stream", "Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory").Default("false").Bool()
-	method      = kingpin.Flag("method", "HTTP method").Default("GET").Short('m').String()
-	headers     = kingpin.Flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
-	host        = kingpin.Flag("host", "Host header").String()
-	contentType = kingpin.Flag("content", "Content-Type header").Short('T').String()
-	cert        = kingpin.Flag("cert", "Path to the client's TLS Certificate").ExistingFile()
-	key         = kingpin.Flag("key", "Path to the client's TLS Certificate Private Key").ExistingFile()
-	insecure    = kingpin.Flag("insecure", "Controls whether a client verifies the server's certificate chain and host name").Short('k').Bool()
+	concurrency = flag("concurrency", "Number of connections to run concurrently").Short('c').Default("100").Int()
+	requests    = flag("requests", "Number of requests to run").Short('n').Default("-1").Int64()
+	duration    = flag("duration", "Duration of test, examples: -d 10s -d 3m").Short('d').PlaceHolder("DURATION").Duration()
+	interval    = flag("interval", "Print snapshot result every interval, use 0 to print once at the end").Short('i').Default("200ms").Duration()
+	seconds     = flag("seconds", "Use seconds as time unit to print").Bool()
+	logfile     = flag("logfile", "logfile to log details like response body").String()
+	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
 
-	chartsListenAddr = kingpin.Flag("listen", "Listen addr to serve Web UI").Default(":18888").String()
-	timeout          = kingpin.Flag("timeout", "Timeout for each http request").PlaceHolder("DURATION").Duration()
-	dialTimeout      = kingpin.Flag("dial-timeout", "Timeout for dial addr").PlaceHolder("DURATION").Duration()
-	reqWriteTimeout  = kingpin.Flag("req-timeout", "Timeout for full request writing").PlaceHolder("DURATION").Duration()
-	respReadTimeout  = kingpin.Flag("resp-timeout", "Timeout for full response reading").PlaceHolder("DURATION").Duration()
-	socks5           = kingpin.Flag("socks5", "Socks5 proxy").PlaceHolder("ip:port").String()
+	body        = flag("body", "HTTP request body, if start the body with @, the rest should be a filename to read").Short('b').String()
+	stream      = flag("stream", "Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory").Default("false").Bool()
+	method      = flag("method", "HTTP method").Short('m').String()
+	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
+	host        = flag("host", "Host header").String()
+	contentType = flag("content", "Content-Type header").Short('T').String()
+	cert        = flag("cert", "Path to the client's TLS Certificate").ExistingFile()
+	key         = flag("key", "Path to the client's TLS Certificate Private Key").ExistingFile()
+	insecure    = flag("insecure", "Controls whether a client verifies the server's certificate chain and host name").Short('k').Bool()
 
-	autoOpenBrowser = kingpin.Flag("auto-open-browser", "Specify whether auto open browser to show Web charts").Bool()
+	port            = flag("port", "Listen port for serve Web UI").Default("18888").Int()
+	timeout         = flag("timeout", "Timeout for each http request").PlaceHolder("DURATION").Duration()
+	dialTimeout     = flag("dial-timeout", "Timeout for dial addr").PlaceHolder("DURATION").Duration()
+	reqWriteTimeout = flag("req-timeout", "Timeout for full request writing").PlaceHolder("DURATION").Duration()
+	rspReadTimeout  = flag("rsp-timeout", "Timeout for full response reading").PlaceHolder("DURATION").Duration()
+	socks5          = flag("socks5", "Socks5 proxy").PlaceHolder("ip:port").String()
+
+	autoOpenBrowser = flag("auto-open-browser", "Specify whether auto open browser to show Web charts").Bool()
 
 	url = kingpin.Arg("url", "request url").Required().String()
 )
@@ -107,35 +110,29 @@ func main() {
 	kingpin.Parse()
 
 	if *requests >= 0 && *requests < int64(*concurrency) {
-		errAndExit("requests must greater than or equal concurrency")
-		return
-	}
-	if (*cert != "" && *key == "") || (*cert == "" && *key != "") {
-		errAndExit("must specify cert and key at the same time")
-		return
+		*concurrency = int(*requests)
 	}
 
-	var err error
-	var bodyBytes []byte
-	var bodyFile string
-	if strings.HasPrefix(*body, "@") {
-		fileName := (*body)[1:]
-		if _, err = os.Stat(fileName); err != nil {
-			errAndExit(err.Error())
-			return
-		}
-		if *stream {
-			bodyFile = fileName
-		} else {
-			bodyBytes, err = ioutil.ReadFile(fileName)
-			if err != nil {
-				errAndExit(err.Error())
-				return
-			}
-		}
-	} else if *body != "" {
-		bodyBytes = []byte(*body)
+	if *cert == "" || *key == "" {
+		*cert = ""
+		*key = ""
 	}
+
+	var logf *os.File
+	if *logfile != "" {
+		if v, err := os.OpenFile(*logfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666); err != nil {
+			errAndExit(err.Error())
+		} else {
+			logf = v
+		}
+	}
+
+	think, err := ParseThinkTime(*thinkTime)
+	if err != nil {
+		errAndExit(err.Error())
+	}
+
+	bodyFile, bodyBytes := parseBodyArg()
 
 	clientOpt := ClientOpt{
 		url:       *url,
@@ -150,7 +147,7 @@ func main() {
 
 		maxConns:     *concurrency,
 		doTimeout:    *timeout,
-		readTimeout:  *respReadTimeout,
+		readTimeout:  *rspReadTimeout,
 		writeTimeout: *reqWriteTimeout,
 		dialTimeout:  *dialTimeout,
 
@@ -159,31 +156,33 @@ func main() {
 		host:        *host,
 	}
 
-	requester, err := NewRequester(*concurrency, *requests, *duration, &clientOpt)
+	requester, err := NewRequester(*concurrency, *requests, logf, *duration, &clientOpt, think)
 	if err != nil {
 		errAndExit(err.Error())
 		return
 	}
 
 	// description
-	var desc string
-	desc = fmt.Sprintf("Benchmarking %s", *url)
+	desc := fmt.Sprintf("Benchmarking %s", *url)
 	if *requests > 0 {
 		desc += fmt.Sprintf(" with %d request(s)", *requests)
 	}
 	if *duration > 0 {
-		desc += fmt.Sprintf(" for %s", duration.String())
+		desc += fmt.Sprintf(" for %s", *duration)
 	}
 	desc += fmt.Sprintf(" using %d connection(s).", *concurrency)
 	fmt.Println(desc)
 
 	// charts listener
 	var ln net.Listener
-	if *chartsListenAddr != "" {
-		ln, err = net.Listen("tcp", *chartsListenAddr)
-		if err != nil {
+	if *port > 0 {
+		*port = getFreePort(*port)
+	}
+
+	if *port > 0 {
+		addr := fmt.Sprintf(":%d", *port)
+		if ln, err = net.Listen("tcp", addr); err != nil {
 			errAndExit(err.Error())
-			return
 		}
 		fmt.Printf("@ Real-time charts is listening on http://%s\n", ln.Addr().String())
 	}
@@ -193,7 +192,7 @@ func main() {
 	go requester.Run()
 
 	// metrics collection
-	report := NewStreamReport()
+	report := NewStreamReport(*concurrency)
 	go report.Collect(requester.RecordChan())
 
 	if ln != nil {
@@ -201,7 +200,6 @@ func main() {
 		charts, err := NewCharts(ln, report.Charts, desc)
 		if err != nil {
 			errAndExit(err.Error())
-			return
 		}
 		go charts.Serve(*autoOpenBrowser)
 	}
@@ -209,4 +207,64 @@ func main() {
 	// terminal printer
 	printer := NewPrinter(*requests, *duration)
 	printer.PrintLoop(report.Snapshot, *interval, *seconds, report.Done())
+}
+
+func getFreePort(port int) int {
+	for i := 0; i < 100; i++ {
+		if IsPortFree(port) {
+			return port
+		}
+		port++
+	}
+
+	return 0
+}
+
+func parseBodyArg() (bodyFile string, bodyBytes []byte) {
+	if strings.HasPrefix(*body, "@") {
+		fileName := (*body)[1:]
+		if _, err := os.Stat(fileName); err != nil {
+			errAndExit(err.Error())
+		}
+		if *stream {
+			return fileName, nil
+		}
+
+		data, err := ioutil.ReadFile(fileName)
+		if err != nil {
+			errAndExit(err.Error())
+		}
+		return "", data
+	}
+
+	if *body != "" {
+		if _, err := os.Stat(*body); err == nil {
+			fileName := *body
+			if *stream {
+				return fileName, nil
+			}
+
+			if data, err := ioutil.ReadFile(fileName); err == nil {
+				return "", data
+			}
+		}
+	}
+
+	return "", []byte(*body)
+}
+
+// IsPortFree tells whether the port is free or not
+func IsPortFree(port int) bool {
+	l, err := ListenPort(port)
+	if err != nil {
+		return false
+	}
+
+	_ = l.Close()
+	return true
+}
+
+// ListenPort listens on port
+func ListenPort(port int) (net.Listener, error) {
+	return net.Listen("tcp", fmt.Sprintf(":%d", port))
 }

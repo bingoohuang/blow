@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpproxy"
@@ -29,13 +31,12 @@ type ReportRecord struct {
 	cost       time.Duration
 	code       string
 	error      string
+	conn       string
 	readBytes  int64
 	writeBytes int64
 }
 
-var recordPool = sync.Pool{
-	New: func() interface{} { return new(ReportRecord) },
-}
+var recordPool = sync.Pool{New: func() interface{} { return new(ReportRecord) }}
 
 func init() {
 	// Honoring env GOMAXPROCS
@@ -56,26 +57,21 @@ type MyConn struct {
 }
 
 func NewMyConn(conn net.Conn, r, w *int64) (*MyConn, error) {
-	myConn := &MyConn{Conn: conn, r: r, w: w}
-	return myConn, nil
+	return &MyConn{Conn: conn, r: r, w: w}, nil
 }
 
 func (c *MyConn) Read(b []byte) (n int, err error) {
-	sz, err := c.Conn.Read(b)
-
-	if err == nil {
-		atomic.AddInt64(c.r, int64(sz))
+	if n, err = c.Conn.Read(b); n > 0 {
+		atomic.AddInt64(c.r, int64(n))
 	}
-	return sz, err
+	return
 }
 
 func (c *MyConn) Write(b []byte) (n int, err error) {
-	sz, err := c.Conn.Write(b)
-
-	if err == nil {
-		atomic.AddInt64(c.w, int64(sz))
+	if n, err = c.Conn.Write(b); n > 0 {
+		atomic.AddInt64(c.w, int64(n))
 	}
-	return sz, err
+	return
 }
 
 func ThroughputInterceptorDial(dial fasthttp.DialFunc, r *int64, w *int64) fasthttp.DialFunc {
@@ -102,8 +98,11 @@ type Requester struct {
 
 	readBytes  int64
 	writeBytes int64
+	logf       *os.File
 
-	cancel func()
+	cancel   func()
+	think    *ThinkTime
+	logfLock *sync.Mutex
 }
 
 type ClientOpt struct {
@@ -128,7 +127,7 @@ type ClientOpt struct {
 	host        string
 }
 
-func NewRequester(concurrency int, requests int64, duration time.Duration, clientOpt *ClientOpt) (*Requester, error) {
+func NewRequester(concurrency int, requests int64, logf *os.File, duration time.Duration, clientOpt *ClientOpt, think *ThinkTime) (*Requester, error) {
 	maxResult := concurrency * 100
 	if maxResult > 8192 {
 		maxResult = 8192
@@ -136,16 +135,23 @@ func NewRequester(concurrency int, requests int64, duration time.Duration, clien
 	r := &Requester{
 		concurrency: concurrency,
 		requests:    requests,
+		logf:        logf,
 		duration:    duration,
 		clientOpt:   clientOpt,
 		recordChan:  make(chan *ReportRecord, maxResult),
 	}
+
+	if r.logf != nil {
+		r.logfLock = &sync.Mutex{}
+	}
+
 	client, header, err := buildRequestClient(clientOpt, &r.readBytes, &r.writeBytes)
 	if err != nil {
 		return nil, err
 	}
 	r.httpClient = client
 	r.httpHeader = header
+	r.think = think
 	return r, nil
 }
 
@@ -176,18 +182,19 @@ func buildTLSConfig(opt *ClientOpt) (*tls.Config, error) {
 	}, nil
 }
 
-func buildRequestClient(opt *ClientOpt, r *int64, w *int64) (*fasthttp.HostClient, *fasthttp.RequestHeader, error) {
+func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fasthttp.RequestHeader, error) {
 	u, err := url2.Parse(opt.url)
 	if err != nil {
 		return nil, nil, err
 	}
 	httpClient := &fasthttp.HostClient{
-		Addr:                          addMissingPort(u.Host, u.Scheme == "https"),
-		IsTLS:                         u.Scheme == "https",
-		Name:                          "plow",
-		MaxConns:                      opt.maxConns,
-		ReadTimeout:                   opt.readTimeout,
-		WriteTimeout:                  opt.writeTimeout,
+		Addr:         addMissingPort(u.Host, u.Scheme == "https"),
+		IsTLS:        u.Scheme == "https",
+		Name:         "plow",
+		MaxConns:     opt.maxConns,
+		ReadTimeout:  opt.readTimeout,
+		WriteTimeout: opt.writeTimeout,
+
 		DisableHeaderNamesNormalizing: true,
 	}
 	if opt.socks5Proxy != "" {
@@ -207,15 +214,14 @@ func buildRequestClient(opt *ClientOpt, r *int64, w *int64) (*fasthttp.HostClien
 	httpClient.TLSConfig = tlsConfig
 
 	var requestHeader fasthttp.RequestHeader
-	if opt.contentType != "" {
-		requestHeader.SetContentType(opt.contentType)
-	}
+	requestHeader.SetContentType(adjustContentType(opt))
 	if opt.host != "" {
 		requestHeader.SetHost(opt.host)
 	} else {
 		requestHeader.SetHost(u.Host)
 	}
-	requestHeader.SetMethod(opt.method)
+
+	requestHeader.SetMethod(adjustMethod(opt))
 	requestHeader.SetRequestURI(u.RequestURI())
 	for _, h := range opt.headers {
 		n := strings.SplitN(h, ":", 2)
@@ -228,29 +234,42 @@ func buildRequestClient(opt *ClientOpt, r *int64, w *int64) (*fasthttp.HostClien
 	return httpClient, &requestHeader, nil
 }
 
-func (r *Requester) Cancel() {
-	r.cancel()
+func adjustContentType(opt *ClientOpt) string {
+	if opt.contentType != "" {
+		return opt.contentType
+	}
+
+	if json.Valid(opt.bodyBytes) {
+		return `application/json; charset=utf-8`
+	}
+
+	return `plain/text; charset=utf-8`
 }
 
-func (r *Requester) RecordChan() <-chan *ReportRecord {
-	return r.recordChan
+func adjustMethod(opt *ClientOpt) string {
+	if opt.method != "" {
+		return opt.method
+	}
+
+	if len(opt.bodyBytes) > 0 || opt.bodyFile != "" {
+		return "POST"
+	}
+
+	return "GET"
 }
 
-func (r *Requester) closeRecord() {
-	r.closeOnce.Do(func() {
-		close(r.recordChan)
-	})
-}
+func (r *Requester) Cancel()                          { r.cancel() }
+func (r *Requester) RecordChan() <-chan *ReportRecord { return r.recordChan }
+func (r *Requester) closeRecord()                     { r.closeOnce.Do(func() { close(r.recordChan) }) }
 
-func (r *Requester) DoRequest(req *fasthttp.Request, resp *fasthttp.Response, rr *ReportRecord) {
+func (r *Requester) DoRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) {
 	t1 := time.Since(startTime)
 	var err error
 	if r.clientOpt.doTimeout > 0 {
-		err = r.httpClient.DoTimeout(req, resp, r.clientOpt.doTimeout)
+		err = r.httpClient.DoTimeout(req, rsp, r.clientOpt.doTimeout)
 	} else {
-		err = r.httpClient.Do(req, resp)
+		err = r.httpClient.Do(req, rsp)
 	}
-	var code string
 
 	if err != nil {
 		rr.cost = time.Since(startTime) - t1
@@ -258,29 +277,59 @@ func (r *Requester) DoRequest(req *fasthttp.Request, resp *fasthttp.Response, rr
 		rr.error = err.Error()
 		return
 	}
+
+	rr.conn = rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()
+	code := parseCodeNxx(rsp)
+	rr.code = code
+	rr.cost = time.Since(startTime) - t1
+
+	if r.logf != nil {
+		err = r.logDetail(req, rsp, rr)
+	} else {
+		err = rsp.BodyWriteTo(ioutil.Discard)
+	}
+
+	if err != nil {
+		rr.error = err.Error()
+	} else {
+		rr.error = ""
+	}
+}
+
+func (r *Requester) logDetail(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) error {
+	r.logfLock.Lock()
+	defer r.logfLock.Unlock()
+
+	_, _ = r.logf.WriteString(fmt.Sprintf("# %s time: %s cost: %s\n",
+		rr.conn, time.Now().Format(time.RFC3339Nano), rr.cost))
+
+	bw := bufio.NewWriter(r.logf)
+	_ = req.Write(bw)
+	_ = bw.Flush()
+	_, _ = r.logf.Write([]byte("\n\n"))
+
+	_, _ = r.logf.Write(rsp.Header.Header())
+	err := rsp.BodyWriteTo(r.logf)
+	_, _ = r.logf.Write([]byte("\n\n"))
+
+	return err
+}
+
+func parseCodeNxx(resp *fasthttp.Response) string {
 	switch resp.StatusCode() / 100 {
 	case 1:
-		code = "1xx"
+		return "1xx"
 	case 2:
-		code = "2xx"
+		return "2xx"
 	case 3:
-		code = "3xx"
+		return "3xx"
 	case 4:
-		code = "4xx"
+		return "4xx"
 	case 5:
-		code = "5xx"
+		return "5xx"
+	default:
+		return "?xx"
 	}
-	err = resp.BodyWriteTo(ioutil.Discard)
-	if err != nil {
-		rr.cost = time.Since(startTime) - t1
-		rr.code = ""
-		rr.error = err.Error()
-		return
-	}
-
-	rr.cost = time.Since(startTime) - t1
-	rr.code = code
-	rr.error = ""
 }
 
 func (r *Requester) Run() {
@@ -356,6 +405,9 @@ func (r *Requester) Run() {
 				rr.readBytes = atomic.LoadInt64(&r.readBytes)
 				rr.writeBytes = atomic.LoadInt64(&r.writeBytes)
 				r.recordChan <- rr
+				if r.think != nil {
+					r.think.Think(true)
+				}
 			}
 		}()
 	}

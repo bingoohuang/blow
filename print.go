@@ -14,11 +14,14 @@ import (
 	"time"
 )
 
+const (
+	maxBarLen = 40
+	barStart  = "|"
+	barBody   = "■"
+	barEnd    = "|"
+)
+
 var (
-	maxBarLen  = 40
-	barStart   = "|"
-	barBody    = "■"
-	barEnd     = "|"
 	barSpinner = []string{"|", "/", "-", "\\"}
 	clearLine  = []byte("\r\033[K")
 	isTerminal = isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
@@ -63,31 +66,20 @@ func (p *Printer) updateProgressValue(rs *SnapshotReport) {
 
 func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Duration, useSeconds bool, doneChan <-chan struct{}) {
 	var buf bytes.Buffer
-
 	var backCursor string
+	stdout := os.Stdout
+
 	echo := func(isFinal bool) {
-		report := snapshot()
-		p.updateProgressValue(report)
-		os.Stdout.WriteString(backCursor)
+		r := snapshot()
+		p.updateProgressValue(r)
+		stdout.WriteString(backCursor)
+
 		buf.Reset()
-		p.formatTableReports(&buf, report, isFinal, useSeconds)
-		result := buf.Bytes()
-		n := 0
-		for {
-			i := bytes.IndexByte(result, '\n')
-			if i == -1 {
-				os.Stdout.Write(clearLine)
-				os.Stdout.Write(result)
-				break
-			}
-			n++
-			os.Stdout.Write(clearLine)
-			os.Stdout.Write(result[:i])
-			os.Stdout.Write([]byte("\n"))
-			result = result[i+1:]
-		}
-		os.Stdout.Sync()
+		p.formatTableReports(&buf, r, isFinal, useSeconds)
+
+		n := printLines(buf.Bytes(), stdout)
 		backCursor = fmt.Sprintf("\033[%dA", n)
+		stdout.Sync()
 	}
 
 	if interval > 0 {
@@ -106,6 +98,23 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 		<-doneChan
 	}
 	echo(true)
+}
+
+func printLines(result []byte, stdout *os.File) int {
+	n := 0
+	for ; ; n++ {
+		i := bytes.IndexByte(result, '\n')
+		if i < 0 {
+			stdout.Write(clearLine)
+			stdout.Write(result)
+			break
+		}
+		stdout.Write(clearLine)
+		stdout.Write(result[:i])
+		stdout.Write([]byte("\n"))
+		result = result[i+1:]
+	}
+	return n
 }
 
 //nolint
@@ -157,65 +166,60 @@ func alignBulk(bulk [][]string, aligns ...int) {
 	}
 }
 
-func writeBulkWith(writer *bytes.Buffer, bulk [][]string, lineStart, sep, lineEnd string) {
+func writeBulkWith(w *bytes.Buffer, bulk [][]string, lineStart, sep, lineEnd string) {
 	for _, b := range bulk {
-		writer.WriteString(lineStart)
-		writer.WriteString(b[0])
+		w.WriteString(lineStart)
+		w.WriteString(b[0])
 		for _, bb := range b[1:] {
-			writer.WriteString(sep)
-			writer.WriteString(bb)
+			w.WriteString(sep)
+			w.WriteString(bb)
 		}
-		writer.WriteString(lineEnd)
+		w.WriteString(lineEnd)
 	}
 }
 
-func writeBulk(writer *bytes.Buffer, bulk [][]string) {
-	writeBulkWith(writer, bulk, "  ", "  ", "\n")
+func writeBulk(w *bytes.Buffer, bulk [][]string) {
+	writeBulkWith(w, bulk, "  ", "  ", "\n")
 }
 
 func formatFloat64(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
-func (p *Printer) formatTableReports(writer *bytes.Buffer, snapshot *SnapshotReport, isFinal bool, useSeconds bool) {
-	summaryBulk := p.buildSummary(snapshot, isFinal)
-	errorsBulks := p.buildErrors(snapshot)
-	statsBulk := p.buildStats(snapshot, useSeconds)
-	percBulk := p.buildPercentile(snapshot, useSeconds)
-	hisBulk := p.buildHistogram(snapshot, useSeconds, isFinal)
+func (p *Printer) formatTableReports(w *bytes.Buffer, r *SnapshotReport, isFinal bool, useSeconds bool) {
+	w.WriteString("Summary:\n")
+	writeBulk(w, p.buildSummary(r, isFinal))
+	w.WriteString("\n")
 
-	writer.WriteString("Summary:\n")
-	writeBulk(writer, summaryBulk)
-	writer.WriteString("\n")
-
+	errorsBulks := p.buildErrors(r)
 	if errorsBulks != nil {
-		writer.WriteString("Error:\n")
-		writeBulk(writer, errorsBulks)
-		writer.WriteString("\n")
+		w.WriteString("Error:\n")
+		writeBulk(w, errorsBulks)
+		w.WriteString("\n")
 	}
 
-	writeBulkWith(writer, statsBulk, "", "  ", "\n")
-	writer.WriteString("\n")
+	writeBulkWith(w, p.buildStats(r, useSeconds), "", "  ", "\n")
+	w.WriteString("\n")
 
-	writer.WriteString("Latency Percentile:\n")
-	writeBulk(writer, percBulk)
-	writer.WriteString("\n")
+	w.WriteString("Latency Percentile:\n")
+	writeBulk(w, p.buildPercentile(r, useSeconds))
+	w.WriteString("\n")
 
-	writer.WriteString("Latency Histogram:\n")
-	writeBulk(writer, hisBulk)
+	w.WriteString("Latency Histogram:\n")
+	writeBulk(w, p.buildHistogram(r, useSeconds, isFinal))
 }
 
-func (p *Printer) buildHistogram(snapshot *SnapshotReport, useSeconds bool, isFinal bool) [][]string {
+func (p *Printer) buildHistogram(r *SnapshotReport, useSeconds bool, isFinal bool) [][]string {
 	hisBulk := make([][]string, 0, 8)
 	maxCount := 0
 	hisSum := 0
-	for _, bin := range snapshot.Histograms {
+	for _, bin := range r.Histograms {
 		if maxCount < bin.Count {
 			maxCount = bin.Count
 		}
 		hisSum += bin.Count
 	}
-	for _, bin := range snapshot.Histograms {
+	for _, bin := range r.Histograms {
 		row := []string{durationToString(bin.Mean, useSeconds), strconv.Itoa(bin.Count)}
 		if isFinal {
 			row = append(row, fmt.Sprintf("%.2f%%", math.Floor(float64(bin.Count)*1e4/float64(hisSum)+0.5)/100.0))
@@ -236,10 +240,10 @@ func (p *Printer) buildHistogram(snapshot *SnapshotReport, useSeconds bool, isFi
 	return hisBulk
 }
 
-func (p *Printer) buildPercentile(snapshot *SnapshotReport, useSeconds bool) [][]string {
+func (p *Printer) buildPercentile(r *SnapshotReport, useSeconds bool) [][]string {
 	percBulk := make([][]string, 2)
-	percAligns := make([]int, 0, len(snapshot.Percentiles))
-	for _, percentile := range snapshot.Percentiles {
+	percAligns := make([]int, 0, len(r.Percentiles))
+	for _, percentile := range r.Percentiles {
 		perc := formatFloat64(percentile.Percentile * 100)
 		percBulk[0] = append(percBulk[0], "P"+perc)
 		percBulk[1] = append(percBulk[1], durationToString(percentile.Latency, useSeconds))
@@ -250,36 +254,24 @@ func (p *Printer) buildPercentile(snapshot *SnapshotReport, useSeconds bool) [][
 	return percBulk
 }
 
-func (p *Printer) buildStats(snapshot *SnapshotReport, useSeconds bool) [][]string {
-	var statsBulk [][]string
-	statsBulk = append(statsBulk,
-		[]string{"Statistics", "Min", "Mean", "StdDev", "Max"},
-		[]string{
-			"  Latency",
-			durationToString(snapshot.Stats.Min, useSeconds),
-			durationToString(snapshot.Stats.Mean, useSeconds),
-			durationToString(snapshot.Stats.StdDev, useSeconds),
-			durationToString(snapshot.Stats.Max, useSeconds),
-		},
-	)
-	if snapshot.RpsStats != nil {
-		statsBulk = append(statsBulk,
-			[]string{
-				"  RPS",
-				formatFloat64(math.Trunc(snapshot.RpsStats.Min*100) / 100.0),
-				formatFloat64(math.Trunc(snapshot.RpsStats.Mean*100) / 100.0),
-				formatFloat64(math.Trunc(snapshot.RpsStats.StdDev*100) / 100.0),
-				formatFloat64(math.Trunc(snapshot.RpsStats.Max*100) / 100.0),
-			},
-		)
+func (p *Printer) buildStats(r *SnapshotReport, useSeconds bool) [][]string {
+	dts := func(d time.Duration) string { return durationToString(d, useSeconds) }
+	st := r.Stats
+	statsBulk := [][]string{
+		{"Statistics", "Min", "Mean", "StdDev", "Max"},
+		{"  Latency", dts(st.Min), dts(st.Mean), dts(st.StdDev), dts(st.Max)}}
+	rs := r.RpsStats
+	if rs != nil {
+		fft := func(v float64) string { return formatFloat64(math.Trunc(v*100) / 100.0) }
+		statsBulk = append(statsBulk, []string{"  RPS", fft(rs.Min), fft(rs.Mean), fft(rs.StdDev), fft(rs.Max)})
 	}
 	alignBulk(statsBulk, AlignLeft, AlignCenter, AlignCenter, AlignCenter, AlignCenter)
 	return statsBulk
 }
 
-func (p *Printer) buildErrors(snapshot *SnapshotReport) [][]string {
+func (p *Printer) buildErrors(r *SnapshotReport) [][]string {
 	var errorsBulks [][]string
-	for k, v := range snapshot.Errors {
+	for k, v := range r.Errors {
 		vs := colorize(strconv.FormatInt(v, 10), FgRedColor)
 		errorsBulks = append(errorsBulks, []string{vs, "\"" + k + "\""})
 	}
@@ -290,24 +282,19 @@ func (p *Printer) buildErrors(snapshot *SnapshotReport) [][]string {
 	return errorsBulks
 }
 
-func (p *Printer) buildSummary(snapshot *SnapshotReport, isFinal bool) [][]string {
-	summarybulk := make([][]string, 0, 8)
-	elapsedLine := []string{"Elapsed", snapshot.Elapsed.Truncate(time.Millisecond).String()}
+func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool) [][]string {
+	elapsedLine := []string{"Elapsed", r.Elapsed.Truncate(time.Millisecond).String()}
 	if p.maxDuration > 0 && !isFinal {
 		elapsedLine = append(elapsedLine, p.pbDurStr)
 	}
-	countLine := []string{"Count", strconv.FormatInt(snapshot.Count, 10)}
+	countLine := []string{"Count", strconv.FormatInt(r.Count, 10)}
 	if p.maxNum > 0 && !isFinal {
 		countLine = append(countLine, p.pbNumStr)
 	}
-	summarybulk = append(
-		summarybulk,
-		elapsedLine,
-		countLine,
-	)
+	summaryBulk := [][]string{elapsedLine, countLine}
 
-	codesBulks := make([][]string, 0, len(snapshot.Codes))
-	for k, v := range snapshot.Codes {
+	codesBulks := make([][]string, 0, len(r.Codes))
+	for k, v := range r.Codes {
 		vs := strconv.FormatInt(v, 10)
 		if k != "2xx" {
 			vs = colorize(vs, FgMagentaColor)
@@ -315,14 +302,16 @@ func (p *Printer) buildSummary(snapshot *SnapshotReport, isFinal bool) [][]strin
 		codesBulks = append(codesBulks, []string{"  " + k, vs})
 	}
 	sort.Slice(codesBulks, func(i, j int) bool { return codesBulks[i][0] < codesBulks[j][0] })
-	summarybulk = append(summarybulk, codesBulks...)
-	summarybulk = append(summarybulk,
-		[]string{"RPS", fmt.Sprintf("%.3f", snapshot.RPS)},
-		[]string{"Reads", fmt.Sprintf("%.3fMB/s", snapshot.ReadThroughput)},
-		[]string{"Writes", fmt.Sprintf("%.3fMB/s", snapshot.WriteThroughput)},
+	summaryBulk = append(summaryBulk, codesBulks...)
+	summaryBulk = append(summaryBulk,
+		[]string{"RPS", fmt.Sprintf("%.3f", r.RPS)},
+		[]string{"Reads", fmt.Sprintf("%.3fMB/s", r.ReadThroughput)},
+		[]string{"Writes", fmt.Sprintf("%.3fMB/s", r.WriteThroughput)},
+		[]string{"Connections", fmt.Sprintf("%d", r.Connections)},
 	)
-	alignBulk(summarybulk, AlignLeft, AlignRight)
-	return summarybulk
+
+	alignBulk(summaryBulk, AlignLeft, AlignRight)
+	return summaryBulk
 }
 
 var ansi = regexp.MustCompile("\033\\[(?:[0-9]{1,3}(?:;[0-9]{1,3})*)?[m|K]")
@@ -337,14 +326,14 @@ const (
 	AlignCenter
 )
 
-func padString(s, pad string, width int, align int) string {
-	gap := width - displayWidth(s)
-	if gap > 0 {
-		if align == AlignLeft {
+func padString(s, pad string, width, align int) string {
+	if gap := width - displayWidth(s); gap > 0 {
+		switch align {
+		case AlignLeft:
 			return s + strings.Repeat(pad, gap)
-		} else if align == AlignRight {
+		case AlignRight:
 			return strings.Repeat(pad, gap) + s
-		} else if align == AlignCenter {
+		case AlignCenter:
 			gapLeft := gap / 2
 			gapRight := gap - gapLeft
 			return strings.Repeat(pad, gapLeft) + s + strings.Repeat(pad, gapRight)
