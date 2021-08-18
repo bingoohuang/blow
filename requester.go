@@ -190,7 +190,7 @@ func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fas
 	httpClient := &fasthttp.HostClient{
 		Addr:         addMissingPort(u.Host, u.Scheme == "https"),
 		IsTLS:        u.Scheme == "https",
-		Name:         "plow",
+		Name:         "blow",
 		MaxConns:     opt.maxConns,
 		ReadTimeout:  opt.readTimeout,
 		WriteTimeout: opt.writeTimeout,

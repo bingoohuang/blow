@@ -267,9 +267,7 @@ func (s *StreamReport) Snapshot() *SnapshotReport {
 	return rs
 }
 
-func (s *StreamReport) Done() <-chan struct{} {
-	return s.doneChan
-}
+func (s *StreamReport) Done() <-chan struct{} { return s.doneChan }
 
 type ChartsReport struct {
 	RPS     float64

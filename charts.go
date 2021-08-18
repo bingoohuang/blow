@@ -63,7 +63,7 @@ function {{ .ViewID }}_sync() {
 <html>
     {{- template "header" . }}
 <body>
-<p align="center">🚀 <a href="https://github.com/six-ddc/plow"><b>Plow</b></a> %s</p>
+<p align="center">🚀 <a href="https://github.com/bingoohuang/blow"><b>Plow</b></a> %s</p>
 <style> .box { justify-content:center; display:flex; flex-wrap:wrap } </style>
 <div class="box"> {{- range .Charts }} {{ template "base" . }} {{- end }} </div>
 </body>
@@ -156,7 +156,7 @@ func NewCharts(ln net.Listener, dataFunc func() *ChartsReport, desc string) (*Ch
 
 	c := &Charts{ln: ln, dataFunc: dataFunc}
 	c.page = components.NewPage()
-	c.page.PageTitle = "plow"
+	c.page.PageTitle = "blow"
 	c.page.AssetsHost = assetsPath
 	c.page.Assets.JSAssets.Add("jquery.min.js")
 	c.page.AddCharts(c.newLatencyView(), c.newRPSView())

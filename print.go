@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
+	"io"
 	"math"
 	"os"
 	"regexp"
@@ -64,7 +65,7 @@ func (p *Printer) updateProgressValue(rs *SnapshotReport) {
 	}
 }
 
-func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Duration, useSeconds bool, doneChan <-chan struct{}) {
+func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Duration, useSeconds bool, doneChan <-chan struct{}, requests int64, logf *os.File) {
 	var buf bytes.Buffer
 	var backCursor string
 	stdout := os.Stdout
@@ -98,6 +99,47 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 		<-doneChan
 	}
 	echo(true)
+
+	if requests == 1 && logf != nil {
+		if lastLog := getLastLog(logf); lastLog != "" {
+			stdout.WriteString(lastLog)
+		}
+	}
+
+	if logf != nil {
+		_ = logf.Close()
+	}
+}
+
+func getLastLog(f *os.File) string {
+	found := false
+	ch := make([]byte, 2)
+	var cursor int64 = 0
+	for {
+		cursor -= 1
+		_, err := f.Seek(cursor, io.SeekEnd)
+		if err != nil {
+			return ""
+		}
+
+		n, err := f.Read(ch)
+		if err != nil {
+			return ""
+		}
+
+		if n == 2 && ch[0] == '#' && ch[1] == ' ' { // stop if we find last log
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return ""
+	}
+
+	buffer := make([]byte, -cursor)
+	n, _ := f.Read(buffer)
+	return "\n# " + string(buffer[:n])
 }
 
 func printLines(result []byte, stdout *os.File) int {

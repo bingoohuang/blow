@@ -16,8 +16,7 @@ var (
 	requests    = flag("requests", "Number of requests to run").Short('n').Default("-1").Int64()
 	duration    = flag("duration", "Duration of test, examples: -d 10s -d 3m").Short('d').PlaceHolder("DURATION").Duration()
 	interval    = flag("interval", "Print snapshot result every interval, use 0 to print once at the end").Short('i').Default("200ms").Duration()
-	seconds     = flag("seconds", "Use seconds as time unit to print").Bool()
-	logfile     = flag("logfile", "logfile to log details like response body").String()
+	verbose     = flag("verbose", "Verbose to log file of requests and response details").Bool()
 	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
 
 	body        = flag("body", "HTTP request body, if start the body with @, the rest should be a filename to read").Short('b').String()
@@ -43,7 +42,7 @@ var (
 )
 
 func errAndExit(msg string) {
-	fmt.Fprintln(os.Stderr, "plow: "+msg)
+	fmt.Fprintln(os.Stderr, "blow: "+msg)
 	os.Exit(1)
 }
 
@@ -76,8 +75,8 @@ var CompactUsageTemplate = `{{define "FormatCommand" -}}
 {{end -}}
 Examples:
 
-  plow http://127.0.0.1:8080/ -c 20 -n 100000
-  plow https://httpbin.org/post -c 20 -d 5m --body @file.json -T 'application/json' -m POST
+  blow http://127.0.0.1:8080/ -c 20 -n 100000
+  blow https://httpbin.org/post -c 20 -d 5m --body @file.json -T 'application/json' -m POST
 
 {{if .Context.Flags -}}
 {{T "Flags:"}}
@@ -119,11 +118,12 @@ func main() {
 	}
 
 	var logf *os.File
-	if *logfile != "" {
-		if v, err := os.OpenFile(*logfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666); err != nil {
-			errAndExit(err.Error())
+	if *verbose || *requests == 1 {
+		if tmpFile, err := os.CreateTemp(os.TempDir(), "blowlog.*.log"); err == nil {
+			fmt.Printf("Log details to: %s\n", tmpFile.Name())
+			logf = tmpFile
 		} else {
-			logf = v
+			errAndExit(err.Error())
 		}
 	}
 
@@ -206,7 +206,7 @@ func main() {
 
 	// terminal printer
 	printer := NewPrinter(*requests, *duration)
-	printer.PrintLoop(report.Snapshot, *interval, *seconds, report.Done())
+	printer.PrintLoop(report.Snapshot, *interval, true, report.Done(), *requests, logf)
 }
 
 func getFreePort(port int) int {
