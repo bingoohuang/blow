@@ -16,7 +16,7 @@ var (
 	requests    = flag("requests", "Number of requests to run").Short('n').Default("-1").Int64()
 	duration    = flag("duration", "Duration of test, examples: -d 10s -d 3m").Short('d').PlaceHolder("DURATION").Duration()
 	interval    = flag("interval", "Print snapshot result every interval, use 0 to print once at the end").Short('i').Default("200ms").Duration()
-	verbose     = flag("verbose", "Verbose to log file of requests and response details").Bool()
+	verbose     = flag("verbose", "Verbose to log file of requests and response details").Short('V').Bool()
 	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
 
 	body        = flag("body", "HTTP request body, if start the body with @, the rest should be a filename to read").Short('b').String()

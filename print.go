@@ -107,6 +107,7 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 	}
 
 	if logf != nil {
+		logf.Write(buf.Bytes())
 		_ = logf.Close()
 	}
 }
