@@ -66,6 +66,10 @@ func (p *Printer) updateProgressValue(rs *SnapshotReport) {
 }
 
 func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Duration, useSeconds bool, doneChan <-chan struct{}, requests int64, logf *os.File) {
+	if requests == 0 {
+		select {}
+	}
+
 	var buf bytes.Buffer
 	var backCursor string
 	stdout := os.Stdout

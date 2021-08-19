@@ -40,7 +40,7 @@ var (
 
 	autoOpenBrowser = flag("auto-open-browser", "Specify whether auto open browser to show Web charts").Bool()
 
-	urlAddr = kingpin.Arg("url", "request url").Required().String()
+	urlAddr = kingpin.Arg("url", "request url").String()
 )
 
 func errAndExit(msg string) {
@@ -111,6 +111,16 @@ func main() {
 		Help = `A high-performance HTTP benchmarking tool with real-time web UI and terminal displaying`
 	kingpin.Parse()
 
+	if *urlAddr != "" {
+		if v, err := FixURI(*urlAddr); err != nil {
+			errAndExit(err.Error())
+		} else {
+			*urlAddr = v
+		}
+	} else {
+		*requests = 0
+	}
+
 	if *requests >= 0 && *requests < int64(*concurrency) {
 		*concurrency = int(*requests)
 	}
@@ -118,12 +128,6 @@ func main() {
 	if *cert == "" || *key == "" {
 		*cert = ""
 		*key = ""
-	}
-
-	if v, err := FixURI(*urlAddr); err != nil {
-		errAndExit(err.Error())
-	} else {
-		*urlAddr = v
 	}
 
 	var logf *os.File
@@ -215,7 +219,7 @@ func main() {
 
 	// terminal printer
 	printer := NewPrinter(*requests, *duration)
-	printer.PrintLoop(report.Snapshot, *interval, true, report.Done(), *requests, logf)
+	printer.PrintLoop(report.Snapshot, *interval, false, report.Done(), *requests, logf)
 }
 
 func getFreePort(port int) int {

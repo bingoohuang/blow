@@ -206,8 +206,11 @@ func (c *Charts) Handler(ctx *fasthttp.RequestCtx) {
 			ctx.SetBodyStream(f, -1)
 		}
 	case strings.HasPrefix(path, apiPath):
-		if _, err := ctx.Write(ctx.Request.Body()); err != nil {
+		if n, err := ctx.Write(ctx.Request.Body()); err != nil {
 			log.Println(err)
+		} else if n == 0 {
+			ctx.SetContentType(`application/json; charset=utf-8`)
+			ctx.Write([]byte(`{"status": 200, "message": "OK"}`))
 		}
 	default:
 		ctx.Error("NotFound", fasthttp.StatusNotFound)
