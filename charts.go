@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -26,9 +27,10 @@ import (
 //go:embed jquery.min.js
 var assetsFS embed.FS
 
-var (
+const (
 	assetsPath      = "/echarts/statics/"
-	apiPath         = "/data/"
+	dataPath        = "/data/"
+	apiPath         = "/api/"
 	latencyView     = "latency"
 	rpsView         = "rps"
 	timeFormat      = "15:04:05"
@@ -85,7 +87,7 @@ func (c *Charts) genViewTemplate(vid, route string) string {
 		ViewID   string
 	}{
 		Interval: int(refreshInterval.Milliseconds()),
-		APIPath:  apiPath,
+		APIPath:  dataPath,
 		Route:    route,
 		ViewID:   vid,
 	}
@@ -166,8 +168,9 @@ func NewCharts(ln net.Listener, dataFunc func() *ChartsReport, desc string) (*Ch
 
 func (c *Charts) Handler(ctx *fasthttp.RequestCtx) {
 	path := string(ctx.Path())
-	if strings.HasPrefix(path, apiPath) {
-		view := path[len(apiPath):]
+	switch {
+	case strings.HasPrefix(path, dataPath):
+		view := path[len(dataPath):]
 		var values []interface{}
 		reportData := c.dataFunc()
 		switch view {
@@ -191,10 +194,10 @@ func (c *Charts) Handler(ctx *fasthttp.RequestCtx) {
 			Values: values,
 		}
 		_ = json.NewEncoder(ctx).Encode(metrics)
-	} else if path == "/" {
+	case path == "/":
 		ctx.SetContentType("text/html")
 		_ = c.page.Render(ctx)
-	} else if strings.HasPrefix(path, assetsPath) {
+	case strings.HasPrefix(path, assetsPath):
 		ap := path[len(assetsPath):]
 		f, err := assetsFS.Open(ap)
 		if err != nil {
@@ -202,7 +205,11 @@ func (c *Charts) Handler(ctx *fasthttp.RequestCtx) {
 		} else {
 			ctx.SetBodyStream(f, -1)
 		}
-	} else {
+	case strings.HasPrefix(path, apiPath):
+		if _, err := ctx.Write(ctx.Request.Body()); err != nil {
+			log.Println(err)
+		}
+	default:
 		ctx.Error("NotFound", fasthttp.StatusNotFound)
 	}
 }
@@ -214,7 +221,9 @@ func (c *Charts) Serve(open bool) {
 	if open {
 		go openBrowser("http://" + c.ln.Addr().String())
 	}
-	_ = server.Serve(c.ln)
+	if err := server.Serve(c.ln); err != nil {
+		errAndExit(err.Error())
+	}
 }
 
 // openBrowser go/src/cmd/internal/browser/browser.go

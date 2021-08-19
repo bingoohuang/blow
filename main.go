@@ -5,7 +5,9 @@ import (
 	"gopkg.in/alecthomas/kingpin.v3-unstable"
 	"io/ioutil"
 	"net"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -38,7 +40,7 @@ var (
 
 	autoOpenBrowser = flag("auto-open-browser", "Specify whether auto open browser to show Web charts").Bool()
 
-	url = kingpin.Arg("url", "request url").Required().String()
+	urlAddr = kingpin.Arg("url", "request url").Required().String()
 )
 
 func errAndExit(msg string) {
@@ -75,6 +77,7 @@ var CompactUsageTemplate = `{{define "FormatCommand" -}}
 {{end -}}
 Examples:
 
+  blow :18888/api/hello
   blow http://127.0.0.1:8080/ -c 20 -n 100000
   blow https://httpbin.org/post -c 20 -d 5m --body @file.json -T 'application/json' -m POST
 
@@ -102,7 +105,7 @@ Examples:
 
 func main() {
 	kingpin.UsageTemplate(CompactUsageTemplate).
-		Version("1.1.0").
+		Version("1.2.0 2021-08-19 10:10:52").
 		Author("six-ddc@github").
 		Resolver(kingpin.PrefixedEnvarResolver("PLOW_", ";")).
 		Help = `A high-performance HTTP benchmarking tool with real-time web UI and terminal displaying`
@@ -115,6 +118,12 @@ func main() {
 	if *cert == "" || *key == "" {
 		*cert = ""
 		*key = ""
+	}
+
+	if v, err := FixURI(*urlAddr); err != nil {
+		errAndExit(err.Error())
+	} else {
+		*urlAddr = v
 	}
 
 	var logf *os.File
@@ -135,7 +144,7 @@ func main() {
 	bodyFile, bodyBytes := parseBodyArg()
 
 	clientOpt := ClientOpt{
-		url:       *url,
+		url:       *urlAddr,
 		method:    *method,
 		headers:   *headers,
 		bodyBytes: bodyBytes,
@@ -163,7 +172,7 @@ func main() {
 	}
 
 	// description
-	desc := fmt.Sprintf("Benchmarking %s", *url)
+	desc := fmt.Sprintf("Benchmarking %s", *urlAddr)
 	if *requests > 0 {
 		desc += fmt.Sprintf(" with %d request(s)", *requests)
 	}
@@ -267,4 +276,36 @@ func IsPortFree(port int) bool {
 // ListenPort listens on port
 func ListenPort(port int) (net.Listener, error) {
 	return net.Listen("tcp", fmt.Sprintf(":%d", port))
+}
+
+var reScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+-.]*://`)
+
+const defaultScheme, defaultHost = "http", "127.0.0.1"
+
+func FixURI(uri string) (string, error) {
+	if uri == ":" {
+		uri = ":80"
+	}
+
+	// ex) :8080/hello or /hello or :
+	if strings.HasPrefix(uri, ":") || strings.HasPrefix(uri, "/") {
+		uri = defaultHost + uri
+	}
+
+	// ex) example.com/hello
+	if !reScheme.MatchString(uri) {
+		uri = defaultScheme + "://" + uri
+	}
+
+	u, err := url.Parse(uri)
+	if err != nil {
+		return "", err
+	}
+
+	u.Host = strings.TrimSuffix(u.Host, ":")
+	if u.Path == "" {
+		u.Path = "/"
+	}
+
+	return u.String(), nil
 }

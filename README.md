@@ -1,4 +1,4 @@
-# plow <!-- omit in toc -->
+# blow <!-- omit in toc -->
 
 [![build](https://github.com/bingoohuang/plow/actions/workflows/release.yml/badge.svg)](https://github.com/bingoohuang/plow/actions/workflows/release.yml)
 [![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/plow.json&query=$.versions.stable&label=homebrew)](https://formulae.brew.sh/formula/plow)
