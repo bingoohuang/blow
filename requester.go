@@ -86,6 +86,7 @@ func ThroughputInterceptorDial(dial fasthttp.DialFunc, r *int64, w *int64) fasth
 
 type Requester struct {
 	concurrency int
+	verbose     int
 	requests    int64
 	duration    time.Duration
 	clientOpt   *ClientOpt
@@ -127,7 +128,7 @@ type ClientOpt struct {
 	host        string
 }
 
-func NewRequester(concurrency int, requests int64, logf *os.File, duration time.Duration, clientOpt *ClientOpt, think *ThinkTime) (*Requester, error) {
+func NewRequester(concurrency, verbose int, requests int64, logf *os.File, duration time.Duration, clientOpt *ClientOpt, think *ThinkTime) (*Requester, error) {
 	maxResult := concurrency * 100
 	if maxResult > 8192 {
 		maxResult = 8192
@@ -139,6 +140,7 @@ func NewRequester(concurrency int, requests int64, logf *os.File, duration time.
 		duration:    duration,
 		clientOpt:   clientOpt,
 		recordChan:  make(chan *ReportRecord, maxResult),
+		verbose:     verbose,
 	}
 
 	if r.logf != nil {
@@ -278,11 +280,13 @@ func (r *Requester) DoRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr 
 		return
 	}
 
-	rr.conn = rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()
 	code := parseCodeNxx(rsp)
 	rr.code = code
 	rr.cost = time.Since(startTime) - t1
 
+	if r.verbose >= 1 {
+		rr.conn = rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()
+	}
 	if r.logf != nil {
 		err = r.logDetail(req, rsp, rr)
 	} else {

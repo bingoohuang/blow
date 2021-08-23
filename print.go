@@ -30,16 +30,17 @@ var (
 
 type Printer struct {
 	maxNum      int64
-	maxDuration time.Duration
 	curNum      int64
+	maxDuration time.Duration
 	curDuration time.Duration
 	pbInc       int64
 	pbNumStr    string
 	pbDurStr    string
+	verbose     int
 }
 
-func NewPrinter(maxNum int64, maxDuration time.Duration) *Printer {
-	return &Printer{maxNum: maxNum, maxDuration: maxDuration}
+func NewPrinter(maxNum int64, maxDuration time.Duration, verbose int) *Printer {
+	return &Printer{maxNum: maxNum, maxDuration: maxDuration, verbose: verbose}
 }
 
 func (p *Printer) updateProgressValue(rs *SnapshotReport) {
@@ -354,8 +355,11 @@ func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool) [][]string {
 		[]string{"RPS", fmt.Sprintf("%.3f", r.RPS)},
 		[]string{"Reads", fmt.Sprintf("%.3fMB/s", r.ReadThroughput)},
 		[]string{"Writes", fmt.Sprintf("%.3fMB/s", r.WriteThroughput)},
-		[]string{"Connections", fmt.Sprintf("%d", r.Connections)},
 	)
+
+	if p.verbose >= 1 {
+		summaryBulk = append(summaryBulk, []string{"Connections", fmt.Sprintf("%d", r.Connections)})
+	}
 
 	alignBulk(summaryBulk, AlignLeft, AlignRight)
 	return summaryBulk

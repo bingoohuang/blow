@@ -18,7 +18,7 @@ var (
 	requests    = flag("requests", "Number of requests to run").Short('n').Default("-1").Int64()
 	duration    = flag("duration", "Duration of test, examples: -d 10s -d 3m").Short('d').PlaceHolder("DURATION").Duration()
 	interval    = flag("interval", "Print snapshot result every interval, use 0 to print once at the end").Short('i').Default("200ms").Duration()
-	verbose     = flag("verbose", "Verbose to log file of requests and response details").Short('V').Bool()
+	verbose     = flag("verbose", "v: Show connections in summary. vv: Log requests and response details to file").Short('v').Counter()
 	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
 
 	body        = flag("body", "HTTP request body, if start the body with @, the rest should be a filename to read").Short('b').String()
@@ -84,7 +84,7 @@ Examples:
 {{if .Context.Flags -}}
 {{T "Flags:"}}
 {{.Context.Flags|FlagsToTwoColumns|FormatTwoColumns}}
-  Flags default values also read from env PLOW_SOME_FLAG, such as PLOW_TIMEOUT=5s equals to --timeout=5s
+  Flags default values also read from env BLOW_SOME_FLAG, such as BLOW_TIMEOUT=5s equals to --timeout=5s
 
 {{end -}}
 {{if .Context.Args -}}
@@ -105,9 +105,9 @@ Examples:
 
 func main() {
 	kingpin.UsageTemplate(CompactUsageTemplate).
-		Version("1.2.0 2021-08-19 10:10:52").
+		Version("1.2.1 2021-08-23 10:06:14").
 		Author("six-ddc@github").
-		Resolver(kingpin.PrefixedEnvarResolver("PLOW_", ";")).
+		Resolver(kingpin.PrefixedEnvarResolver("BLOW_", ";")).
 		Help = `A high-performance HTTP benchmarking tool with real-time web UI and terminal displaying`
 	kingpin.Parse()
 
@@ -121,7 +121,11 @@ func main() {
 		*requests = 0
 	}
 
-	if *requests >= 0 && *requests < int64(*concurrency) {
+	if *requests == 1 {
+		*verbose = 2
+	}
+
+	if *requests > 0 && *requests < int64(*concurrency) {
 		*concurrency = int(*requests)
 	}
 
@@ -130,16 +134,7 @@ func main() {
 		*key = ""
 	}
 
-	var logf *os.File
-	if *verbose || *requests == 1 {
-		if tmpFile, err := os.CreateTemp(os.TempDir(), "blowlog.*.log"); err == nil {
-			fmt.Printf("Log details to: %s\n", tmpFile.Name())
-			logf = tmpFile
-		} else {
-			errAndExit(err.Error())
-		}
-	}
-
+	logf := createLogFile()
 	think, err := ParseThinkTime(*thinkTime)
 	if err != nil {
 		errAndExit(err.Error())
@@ -169,7 +164,7 @@ func main() {
 		host:        *host,
 	}
 
-	requester, err := NewRequester(*concurrency, *requests, logf, *duration, &clientOpt, think)
+	requester, err := NewRequester(*concurrency, *verbose, *requests, logf, *duration, &clientOpt, think)
 	if err != nil {
 		errAndExit(err.Error())
 		return
@@ -205,7 +200,7 @@ func main() {
 	go requester.Run()
 
 	// metrics collection
-	report := NewStreamReport(*concurrency)
+	report := NewStreamReport(*concurrency, *verbose)
 	go report.Collect(requester.RecordChan())
 
 	if ln != nil {
@@ -218,8 +213,23 @@ func main() {
 	}
 
 	// terminal printer
-	printer := NewPrinter(*requests, *duration)
+	printer := NewPrinter(*requests, *duration, *verbose)
 	printer.PrintLoop(report.Snapshot, *interval, false, report.Done(), *requests, logf)
+}
+
+func createLogFile() *os.File {
+	if *verbose < 2 {
+		return nil
+	}
+
+	f, err := os.CreateTemp(".", "blow_*.log")
+	if err == nil {
+		fmt.Printf("Log details to: %s\n", f.Name())
+		return f
+	}
+
+	errAndExit(err.Error())
+	return nil
 }
 
 func getFreePort(port int) int {

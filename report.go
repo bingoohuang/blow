@@ -84,20 +84,24 @@ type StreamReport struct {
 	totalConns int64
 
 	doneChan chan struct{}
+	verbose  int
 }
 
-func NewStreamReport(maxConns int) *StreamReport {
-	return &StreamReport{
+func NewStreamReport(maxConns int, verbose int) *StreamReport {
+	s := &StreamReport{
 		latencyQuantile:  quantile.NewTargeted(quantilesTarget),
 		latencyHistogram: histogram.New(8),
 		codes:            make(map[string]int64, 1),
 		errors:           make(map[string]int64, 1),
-		conns:            make(map[string]struct{}, maxConns),
 		doneChan:         make(chan struct{}, 1),
+		conns:            make(map[string]struct{}, maxConns),
 		latencyStats:     &Stats{},
 		rpsStats:         &Stats{},
 		latencyWithinSec: &Stats{},
+		verbose:          verbose,
 	}
+
+	return s
 }
 
 func (s *StreamReport) insert(v float64) {
@@ -153,7 +157,7 @@ func (s *StreamReport) Collect(records <-chan *ReportRecord) {
 		if r.error != "" {
 			s.errors[r.error]++
 		}
-		if r.conn != "" {
+		if r.conn != "" && s.verbose >= 1 {
 			if _, ok := s.conns[r.conn]; !ok {
 				s.totalConns++
 				s.conns[r.conn] = struct{}{}
