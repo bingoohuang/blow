@@ -231,8 +231,8 @@ func (s *StreamReport) Snapshot() *SnapshotReport {
 
 	elapseInSec := rs.Elapsed.Seconds()
 	rs.RPS = float64(rs.Count) / elapseInSec
-	rs.ReadThroughput = float64(s.readBytes) / 1024.0 / 1024.0 / elapseInSec
-	rs.WriteThroughput = float64(s.writeBytes) / 1024.0 / 1024.0 / elapseInSec
+	rs.ReadThroughput = float64(s.readBytes) / 1024. / 1024. / elapseInSec
+	rs.WriteThroughput = float64(s.writeBytes) / 1024. / 1024. / elapseInSec
 	rs.Connections = s.totalConns
 
 	rs.Codes = make(map[string]int64, len(s.codes))

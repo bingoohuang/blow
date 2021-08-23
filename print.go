@@ -353,8 +353,8 @@ func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool) [][]string {
 	summaryBulk = append(summaryBulk, codesBulks...)
 	summaryBulk = append(summaryBulk,
 		[]string{"RPS", fmt.Sprintf("%.3f", r.RPS)},
-		[]string{"Reads", fmt.Sprintf("%.3fMB/s", r.ReadThroughput)},
-		[]string{"Writes", fmt.Sprintf("%.3fMB/s", r.WriteThroughput)},
+		[]string{"Reads", fmt.Sprintf("%.3fMiB/s", r.ReadThroughput)},
+		[]string{"Writes", fmt.Sprintf("%.3fMiB/s", r.WriteThroughput)},
 	)
 
 	if p.verbose >= 1 {
