@@ -9,10 +9,12 @@ import (
 	"time"
 )
 
+// ThinkTime simulates man to think awhile.
 type ThinkTime struct {
 	Min, Max time.Duration
 }
 
+// Think start to be thinking.
 func (t ThinkTime) Think(thinkNow bool) (thinkTime time.Duration) {
 	if t.Min == t.Max {
 		thinkTime = t.Min

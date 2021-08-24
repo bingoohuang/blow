@@ -6,12 +6,9 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpproxy"
-	"go.uber.org/automaxprocs/maxprocs"
 	"io/ioutil"
 	"net"
-	url2 "net/url"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -20,6 +17,10 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpproxy"
+	"go.uber.org/automaxprocs/maxprocs"
 )
 
 var (
@@ -185,7 +186,7 @@ func buildTLSConfig(opt *ClientOpt) (*tls.Config, error) {
 }
 
 func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fasthttp.RequestHeader, error) {
-	u, err := url2.Parse(opt.url)
+	u, err := url.Parse(opt.url)
 	if err != nil {
 		return nil, nil, err
 	}

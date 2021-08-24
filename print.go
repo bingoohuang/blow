@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/mattn/go-isatty"
-	"github.com/mattn/go-runewidth"
 	"io"
 	"math"
 	"os"
@@ -13,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mattn/go-isatty"
+	"github.com/mattn/go-runewidth"
 )
 
 const (
@@ -37,10 +38,11 @@ type Printer struct {
 	pbNumStr    string
 	pbDurStr    string
 	verbose     int
+	desc        string
 }
 
-func NewPrinter(maxNum int64, maxDuration time.Duration, verbose int) *Printer {
-	return &Printer{maxNum: maxNum, maxDuration: maxDuration, verbose: verbose}
+func NewPrinter(maxNum int64, maxDuration time.Duration, verbose int, desc string) *Printer {
+	return &Printer{maxNum: maxNum, maxDuration: maxDuration, verbose: verbose, desc: desc}
 }
 
 func (p *Printer) updateProgressValue(rs *SnapshotReport) {
@@ -111,18 +113,22 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 		}
 	}
 
-	if logf != nil {
-		logf.Write(buf.Bytes())
-		_ = logf.Close()
+	t := time.Now().Format(`20060102150405`)
+	if logf == nil {
+		logf, _ = os.CreateTemp(".", "blow_summary_"+t+"_"+"*.log")
 	}
+
+	logf.WriteString(p.desc + " at " + t + "\n\n")
+	_, _ = logf.Write(buf.Bytes())
+	_ = logf.Close()
 }
 
 func getLastLog(f *os.File) string {
 	found := false
 	ch := make([]byte, 2)
-	var cursor int64 = 0
+	var cursor int64
 	for {
-		cursor -= 1
+		cursor--
 		_, err := f.Seek(cursor, io.SeekEnd)
 		if err != nil {
 			return ""
@@ -307,7 +313,8 @@ func (p *Printer) buildStats(r *SnapshotReport, useSeconds bool) [][]string {
 	st := r.Stats
 	statsBulk := [][]string{
 		{"Statistics", "Min", "Mean", "StdDev", "Max"},
-		{"  Latency", dts(st.Min), dts(st.Mean), dts(st.StdDev), dts(st.Max)}}
+		{"  Latency", dts(st.Min), dts(st.Mean), dts(st.StdDev), dts(st.Max)},
+	}
 	rs := r.RpsStats
 	if rs != nil {
 		fft := func(v float64) string { return formatFloat64(math.Trunc(v*100) / 100.0) }

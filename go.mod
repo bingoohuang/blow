@@ -14,4 +14,5 @@ require (
 	github.com/valyala/fasthttp v1.29.0
 	go.uber.org/automaxprocs v1.4.0
 	gopkg.in/alecthomas/kingpin.v3-unstable v3.0.0-20191105091915-95d230a53780
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )

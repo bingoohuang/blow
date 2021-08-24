@@ -80,7 +80,7 @@ func (c *Charts) genViewTemplate(vid, route string) string {
 		panic("failed to parse template " + err.Error())
 	}
 
-	var d = struct {
+	d := struct {
 		Interval int
 		APIPath  string
 		Route    string
@@ -210,7 +210,7 @@ func (c *Charts) Handler(ctx *fasthttp.RequestCtx) {
 			log.Println(err)
 		} else if n == 0 {
 			ctx.SetContentType(`application/json; charset=utf-8`)
-			ctx.Write([]byte(`{"status": 200, "message": "OK"}`))
+			_, _ = ctx.Write([]byte(`{"status": 200, "message": "OK"}`))
 		}
 	default:
 		ctx.Error("NotFound", fasthttp.StatusNotFound)

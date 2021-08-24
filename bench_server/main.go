@@ -18,7 +18,7 @@ func main() {
 	addr := "localhost:" + strconv.Itoa(*serverPort)
 	log.Println("Starting HTTP server on:", addr)
 	log.Fatalln(fasthttp.ListenAndServe(addr, func(c *fasthttp.RequestCtx) {
-		//time.Sleep(time.Duration(rand.Int63n(int64(5 * time.Second))))
+		// time.Sleep(time.Duration(rand.Int63n(int64(5 * time.Second))))
 		if rand.Intn(5) == 0 {
 			c.SetStatusCode(400)
 		}

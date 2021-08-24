@@ -1,24 +1,18 @@
 package main
 
 import (
-	"github.com/beorn7/perks/histogram"
-	"github.com/beorn7/perks/quantile"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/beorn7/perks/histogram"
+	"github.com/beorn7/perks/quantile"
 )
 
-var quantiles = []float64{0.50, 0.75, 0.90, 0.95, 0.99, 0.999, 0.9999}
-
-var quantilesTarget = map[float64]float64{
-	0.50:   0.01,
-	0.75:   0.01,
-	0.90:   0.001,
-	0.95:   0.001,
-	0.99:   0.001,
-	0.999:  0.0001,
-	0.9999: 0.00001,
-}
+var (
+	quantiles       = []float64{0.50, 0.75, 0.90, 0.95, 0.99, 0.999, 0.9999}
+	quantilesTarget = map[float64]float64{0.50: 0.01, 0.75: 0.01, 0.90: 0.001, 0.95: 0.001, 0.99: 0.001, 0.999: 0.0001, 0.9999: 0.00001}
+)
 
 type Stats struct {
 	count int64
@@ -41,11 +35,11 @@ func (s *Stats) Update(v float64) {
 }
 
 func (s *Stats) Stddev() float64 {
-	num := (float64(s.count) * s.sumSq) - math.Pow(s.sum, 2)
 	div := float64(s.count * (s.count - 1))
 	if div == 0 {
 		return 0
 	}
+	num := (float64(s.count) * s.sumSq) - math.Pow(s.sum, 2)
 	return math.Sqrt(num / div)
 }
 
@@ -88,7 +82,7 @@ type StreamReport struct {
 }
 
 func NewStreamReport(maxConns int, verbose int) *StreamReport {
-	s := &StreamReport{
+	return &StreamReport{
 		latencyQuantile:  quantile.NewTargeted(quantilesTarget),
 		latencyHistogram: histogram.New(8),
 		codes:            make(map[string]int64, 1),
@@ -100,14 +94,11 @@ func NewStreamReport(maxConns int, verbose int) *StreamReport {
 		latencyWithinSec: &Stats{},
 		verbose:          verbose,
 	}
-
-	return s
 }
 
 func (s *StreamReport) insert(v float64) {
 	s.latencyQuantile.Insert(v)
 	s.latencyHistogram.Insert(v)
-
 	s.latencyStats.Update(v)
 }
 
@@ -157,7 +148,7 @@ func (s *StreamReport) Collect(records <-chan *ReportRecord) {
 		if r.error != "" {
 			s.errors[r.error]++
 		}
-		if r.conn != "" && s.verbose >= 1 {
+		if r.conn != "" && s.verbose >= 1 && s.conns != nil {
 			if _, ok := s.conns[r.conn]; !ok {
 				s.totalConns++
 				s.conns[r.conn] = struct{}{}
@@ -170,63 +161,54 @@ func (s *StreamReport) Collect(records <-chan *ReportRecord) {
 	}
 }
 
+type SnapshotPercentile struct {
+	Percentile float64
+	Latency    time.Duration
+}
+
+type SnapshotRpsStats struct {
+	Min, Mean, StdDev, Max float64
+}
+
+type SnapshotStats struct {
+	Min, Mean, StdDev, Max time.Duration
+}
+
+type SnapshotHistogram struct {
+	Mean  time.Duration
+	Count int
+}
+
 type SnapshotReport struct {
-	Elapsed         time.Duration
-	Count           int64
-	Codes           map[string]int64
-	Errors          map[string]int64
-	RPS             float64
-	ReadThroughput  float64
-	WriteThroughput float64
-	Connections     int64
+	Elapsed                         time.Duration
+	Codes, Errors                   map[string]int64
+	RPS                             float64
+	ReadThroughput, WriteThroughput float64
+	Count, Connections              int64
 
-	Stats *struct {
-		Min    time.Duration
-		Mean   time.Duration
-		StdDev time.Duration
-		Max    time.Duration
-	}
-
-	RpsStats *struct {
-		Min    float64
-		Mean   float64
-		StdDev float64
-		Max    float64
-	}
-
-	Percentiles []*struct {
-		Percentile float64
-		Latency    time.Duration
-	}
-
-	Histograms []*struct {
-		Mean  time.Duration
-		Count int
-	}
+	Stats       *SnapshotStats
+	RpsStats    *SnapshotRpsStats
+	Percentiles []*SnapshotPercentile
+	Histograms  []*SnapshotHistogram
 }
 
 func (s *StreamReport) Snapshot() *SnapshotReport {
 	s.lock.Lock()
+	defer s.lock.Unlock()
 
 	rs := &SnapshotReport{
 		Elapsed: time.Since(startTime),
 		Count:   s.latencyStats.count,
-		Stats: &struct {
-			Min    time.Duration
-			Mean   time.Duration
-			StdDev time.Duration
-			Max    time.Duration
-		}{time.Duration(s.latencyStats.min), time.Duration(s.latencyStats.Mean()),
-			time.Duration(s.latencyStats.Stddev()), time.Duration(s.latencyStats.max)},
+		Stats: &SnapshotStats{
+			Min: time.Duration(s.latencyStats.min), Mean: time.Duration(s.latencyStats.Mean()),
+			StdDev: time.Duration(s.latencyStats.Stddev()), Max: time.Duration(s.latencyStats.max),
+		},
 	}
 	if s.rpsStats.count > 0 {
-		rs.RpsStats = &struct {
-			Min    float64
-			Mean   float64
-			StdDev float64
-			Max    float64
-		}{s.rpsStats.min, s.rpsStats.Mean(),
-			s.rpsStats.Stddev(), s.rpsStats.max}
+		rs.RpsStats = &SnapshotRpsStats{
+			Min: s.rpsStats.min, Mean: s.rpsStats.Mean(),
+			StdDev: s.rpsStats.Stddev(), Max: s.rpsStats.max,
+		}
 	}
 
 	elapseInSec := rs.Elapsed.Seconds()
@@ -244,30 +226,17 @@ func (s *StreamReport) Snapshot() *SnapshotReport {
 		rs.Errors[k] = v
 	}
 
-	rs.Percentiles = make([]*struct {
-		Percentile float64
-		Latency    time.Duration
-	}, len(quantiles))
+	rs.Percentiles = make([]*SnapshotPercentile, len(quantiles))
 	for i, p := range quantiles {
-		rs.Percentiles[i] = &struct {
-			Percentile float64
-			Latency    time.Duration
-		}{p, time.Duration(s.latencyQuantile.Query(p))}
+		rs.Percentiles[i] = &SnapshotPercentile{Percentile: p, Latency: time.Duration(s.latencyQuantile.Query(p))}
 	}
 
 	hisBins := s.latencyHistogram.Bins()
-	rs.Histograms = make([]*struct {
-		Mean  time.Duration
-		Count int
-	}, len(hisBins))
+	rs.Histograms = make([]*SnapshotHistogram, len(hisBins))
 	for i, b := range hisBins {
-		rs.Histograms[i] = &struct {
-			Mean  time.Duration
-			Count int
-		}{time.Duration(b.Mean()), b.Count}
+		rs.Histograms[i] = &SnapshotHistogram{Mean: time.Duration(b.Mean()), Count: b.Count}
 	}
 
-	s.lock.Unlock()
 	return rs
 }
 
@@ -280,15 +249,11 @@ type ChartsReport struct {
 
 func (s *StreamReport) Charts() *ChartsReport {
 	s.lock.Lock()
-	var cr *ChartsReport
+	defer s.lock.Unlock()
+
 	if s.noDateWithinSec {
-		cr = nil
-	} else {
-		cr = &ChartsReport{
-			RPS:     s.rpsWithinSec,
-			Latency: *s.latencyWithinSec,
-		}
+		return nil
 	}
-	s.lock.Unlock()
-	return cr
+
+	return &ChartsReport{RPS: s.rpsWithinSec, Latency: *s.latencyWithinSec}
 }

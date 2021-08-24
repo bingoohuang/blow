@@ -2,26 +2,27 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/alecthomas/kingpin.v3-unstable"
 	"io/ioutil"
 	"net"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
+	"time"
+
+	"gopkg.in/alecthomas/kingpin.v3-unstable"
 )
 
 var (
 	flag = kingpin.Flag
 
-	concurrency = flag("concurrency", "Number of connections to run concurrently").Short('c').Default("100").Int()
-	requests    = flag("requests", "Number of requests to run").Short('n').Default("-1").Int64()
-	duration    = flag("duration", "Duration of test, examples: -d 10s -d 3m").Short('d').PlaceHolder("DURATION").Duration()
-	interval    = flag("interval", "Print snapshot result every interval, use 0 to print once at the end").Short('i').Default("200ms").Duration()
+	concurrency = flag("concurrency", "#connections to run concurrently").Short('c').Default("100").Int()
+	requests    = flag("requests", "#requests to run").Short('n').Default("-1").Int64()
+	duration    = flag("duration", "Duration of test, examples: -d10s -d3m").Short('d').PlaceHolder("DURATION").Duration()
 	verbose     = flag("verbose", "v: Show connections in summary. vv: Log requests and response details to file").Short('v').Counter()
 	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
 
-	body        = flag("body", "HTTP request body, if start the body with @, the rest should be a filename to read").Short('b').String()
+	body        = flag("body", "HTTP request body, or @file to read from").Short('b').String()
 	stream      = flag("stream", "Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory").Default("false").Bool()
 	method      = flag("method", "HTTP method").Short('m').String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
@@ -37,7 +38,6 @@ var (
 	reqWriteTimeout = flag("req-timeout", "Timeout for full request writing").PlaceHolder("DURATION").Duration()
 	rspReadTimeout  = flag("rsp-timeout", "Timeout for full response reading").PlaceHolder("DURATION").Duration()
 	socks5          = flag("socks5", "Socks5 proxy").PlaceHolder("ip:port").String()
-
 	autoOpenBrowser = flag("auto-open-browser", "Specify whether auto open browser to show Web charts").Bool()
 
 	urlAddr = kingpin.Arg("url", "request url").String()
@@ -105,7 +105,7 @@ Examples:
 
 func main() {
 	kingpin.UsageTemplate(CompactUsageTemplate).
-		Version("1.2.1 2021-08-23 10:06:14").
+		Version("1.2.2 2021-08-24 09:55:35").
 		Author("six-ddc@github").
 		Resolver(kingpin.PrefixedEnvarResolver("BLOW_", ";")).
 		Help = `A high-performance HTTP benchmarking tool with real-time web UI and terminal displaying`
@@ -213,8 +213,8 @@ func main() {
 	}
 
 	// terminal printer
-	printer := NewPrinter(*requests, *duration, *verbose)
-	printer.PrintLoop(report.Snapshot, *interval, false, report.Done(), *requests, logf)
+	printer := NewPrinter(*requests, *duration, *verbose, desc)
+	printer.PrintLoop(report.Snapshot, 200*time.Millisecond, false, report.Done(), *requests, logf)
 }
 
 func createLogFile() *os.File {
@@ -222,7 +222,8 @@ func createLogFile() *os.File {
 		return nil
 	}
 
-	f, err := os.CreateTemp(".", "blow_*.log")
+	t := time.Now().Format(`20060102150405`)
+	f, err := os.CreateTemp(".", "blow_detail_"+t+"_"+"*.log")
 	if err == nil {
 		fmt.Printf("Log details to: %s\n", f.Name())
 		return f

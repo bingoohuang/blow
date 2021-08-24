@@ -1,8 +1,8 @@
 # blow <!-- omit in toc -->
 
-[![build](https://github.com/bingoohuang/plow/actions/workflows/release.yml/badge.svg)](https://github.com/bingoohuang/plow/actions/workflows/release.yml)
+[![build](https://github.com/bingoohuang/blow/actions/workflows/release.yml/badge.svg)](https://github.com/bingoohuang/blow/actions/workflows/release.yml)
 [![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/plow.json&query=$.versions.stable&label=homebrew)](https://formulae.brew.sh/formula/plow)
-[![GitHub license](https://img.shields.io/github/license/bingoohuang/plow.svg)](https://github.com/bingoohuang/plow/blob/main/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/bingoohuang/blow.svg)](https://github.com/bingoohuang/blow/blob/main/LICENSE)
 [![made-with-Go](https://img.shields.io/badge/Made%20with-Go-1f425f.svg)](http://golang.org)
 
 Blow is a HTTP(S) benchmarking tool, written in Golang. It uses
@@ -17,7 +17,7 @@ The implementation of real-time computing Histograms and Quantiles using stream-
 by [prometheus](https://github.com/prometheus/client_golang) with low memory and CPU bounds. so it's almost no
 additional performance overhead for benchmarking.
 
-![](https://github.com/bingoohuang/plow/blob/main/demo.gif?raw=true)
+![](https://github.com/bingoohuang/blow/blob/main/demo.gif?raw=true)
 
 ```text
 ❯ ./blow http://127.0.0.1:8080/hello -c 20
