@@ -270,7 +270,7 @@ func (r *Requester) RecordChan() <-chan *ReportRecord { return r.recordChan }
 func (r *Requester) closeRecord()                     { r.closeOnce.Do(func() { close(r.recordChan) }) }
 
 func (r *Requester) DoRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) {
-	t1 := time.Since(startTime)
+	t1 := time.Now()
 	var err error
 	if r.clientOpt.doTimeout > 0 {
 		err = r.httpClient.DoTimeout(req, rsp, r.clientOpt.doTimeout)
@@ -278,16 +278,14 @@ func (r *Requester) DoRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr 
 		err = r.httpClient.Do(req, rsp)
 	}
 
+	rr.cost = time.Since(t1)
 	if err != nil {
-		rr.cost = time.Since(startTime) - t1
 		rr.code = ""
 		rr.error = err.Error()
 		return
 	}
 
-	code := parseCodeNxx(rsp)
-	rr.code = code
-	rr.cost = time.Since(startTime) - t1
+	rr.code = parseCodeNxx(rsp)
 
 	if r.verbose >= 1 {
 		rr.conn = rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()
