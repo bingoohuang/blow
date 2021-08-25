@@ -15,11 +15,8 @@ var (
 )
 
 type Stats struct {
-	count int64
-	sum   float64
-	sumSq float64
-	min   float64
-	max   float64
+	count                int64
+	sum, sumSq, min, max float64
 }
 
 func (s *Stats) Update(v float64) {

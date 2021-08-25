@@ -23,6 +23,7 @@ var (
 	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
 
 	body        = flag("body", "HTTP request body, or @file to read from").Short('b').String()
+	qps         = flag("qps", "Rate limit, in queries per second per worker. Default is no rate limit").Short('q').Float64()
 	stream      = flag("stream", "Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory").Default("false").Bool()
 	method      = flag("method", "HTTP method").Short('m').String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
@@ -105,8 +106,8 @@ Examples:
 
 func main() {
 	kingpin.UsageTemplate(CompactUsageTemplate).
-		Version("1.2.2 2021-08-24 09:55:35").
-		Author("six-ddc@github").
+		Version("1.2.3 2021-08-25 15:30:23").
+		Author("bingoohuang@github").
 		Resolver(kingpin.PrefixedEnvarResolver("BLOW_", ";")).
 		Help = `A high-performance HTTP benchmarking tool with real-time web UI and terminal displaying`
 	kingpin.Parse()

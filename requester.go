@@ -105,6 +105,9 @@ type Requester struct {
 	cancel   func()
 	think    *ThinkTime
 	logfLock *sync.Mutex
+
+	// Qps is the rate limit in queries per second.
+	QPS float64
 }
 
 type ClientOpt struct {
@@ -142,6 +145,7 @@ func NewRequester(concurrency, verbose int, requests int64, logf *os.File, durat
 		clientOpt:   clientOpt,
 		recordChan:  make(chan *ReportRecord, maxResult),
 		verbose:     verbose,
+		QPS:         *qps,
 	}
 
 	if r.logf != nil {
@@ -377,6 +381,12 @@ func (r *Requester) Run() {
 				req.URI().SetHostBytes(req.Header.Host())
 			}
 
+			throttle := func() {}
+			if r.QPS > 0 {
+				t := time.Tick(time.Duration(1e6/(r.QPS)) * time.Microsecond)
+				throttle = func() { <-t }
+			}
+
 			for {
 				select {
 				case <-ctx.Done():
@@ -388,6 +398,8 @@ func (r *Requester) Run() {
 					cancelFunc()
 					return
 				}
+
+				throttle()
 
 				if r.clientOpt.bodyFile != "" {
 					file, err := os.Open(r.clientOpt.bodyFile)
