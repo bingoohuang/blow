@@ -1,7 +1,12 @@
 .PHONY: default test install
 all: default test install
 
-app=$(notdir $(shell pwd))
+app = $(notdir $(shell pwd))
+goVersion = $(shell go version)
+buildTime = $(shell date '+%Y-%m-%d %H:%M:%S')
+gitCommit = $(shell git rev-list -1 HEAD)
+# https://ms2008.github.io/2018/10/08/golang-build-version/
+flags = "-extldflags=-static -s -w -X 'main.buildTime=$(buildTime)' -X main.gitCommit=$(gitCommit) -X 'main.goVersion=$(goVersion)'"
 
 tool:
 	go get github.com/securego/gosec/cmd/gosec
@@ -30,15 +35,16 @@ fmt:
 	gci -w -local github.com/daixiang0/gci
 
 install: init
-	go install -trimpath -ldflags='-extldflags=-static -s -w' ./...
+	go install -trimpath -ldflags=${flags} ./...
 	upx ~/go/bin/${app}
 
 linux: init
-	GOOS=linux GOARCH=amd64 go install -trimpath -ldflags='-extldflags "-static" -s -w'  ./...
+	GOOS=linux GOARCH=amd64 go install -trimpath -ldflags=${flags}  ./...
 	upx ~/go/bin/linux_amd64/${app}
+	bssh scp ~/go/bin/linux_amd64/${app} r:/usr/local/bin/
 
 linux-arm64: init
-	GOOS=linux GOARCH=arm64 go install -trimpath -ldflags='-extldflags "-static" -s -w'  ./...
+	GOOS=linux GOARCH=arm64 go install -trimpath -ldflags=${flags}  ./...
 	upx ~/go/bin/linux_arm64/${app}
 
 test: init

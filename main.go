@@ -106,7 +106,7 @@ Examples:
 
 func main() {
 	kingpin.UsageTemplate(CompactUsageTemplate).
-		Version("1.2.3 2021-08-25 15:30:23").
+		Version(Version()).
 		Author("bingoohuang@github").
 		Resolver(kingpin.PrefixedEnvarResolver("BLOW_", ";")).
 		Help = `A high-performance HTTP benchmarking tool with real-time web UI and terminal displaying`
@@ -184,11 +184,11 @@ func main() {
 
 	// charts listener
 	var ln net.Listener
-	if *port > 0 {
+	if *port > 0 && *requests != 1 {
 		*port = getFreePort(*port)
 	}
 
-	if *port > 0 {
+	if *port > 0 && *requests != 1 {
 		addr := fmt.Sprintf(":%d", *port)
 		if ln, err = net.Listen("tcp", addr); err != nil {
 			errAndExit(err.Error())

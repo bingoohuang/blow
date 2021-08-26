@@ -90,22 +90,15 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 		stdout.Sync()
 	}
 
-	if interval > 0 {
-		ticker := time.NewTicker(interval)
-	loop:
-		for {
-			select {
-			case <-ticker.C:
-				echo(false)
-			case <-doneChan:
-				ticker.Stop()
-				break loop
-			}
-		}
+	if interval > 0 && requests != 1 {
+		tick(interval, func() { echo(false) }, doneChan)
 	} else {
 		<-doneChan
 	}
-	echo(true)
+
+	if requests != 1 {
+		echo(true)
+	}
 
 	if requests == 1 && logf != nil {
 		if lastLog := getLastLog(logf); lastLog != "" {
@@ -121,6 +114,20 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 	logf.WriteString(p.desc + " at " + t + "\n\n")
 	_, _ = logf.Write(buf.Bytes())
 	_ = logf.Close()
+}
+
+func tick(interval time.Duration, echo func(), doneChan <-chan struct{}) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			echo()
+		case <-doneChan:
+			return
+		}
+	}
 }
 
 func getLastLog(f *os.File) string {
