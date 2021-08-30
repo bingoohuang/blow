@@ -1,12 +1,16 @@
 .PHONY: default test install
 all: default test install
 
-app = $(notdir $(shell pwd))
-goVersion = $(shell go version)
-buildTime = $(shell date '+%Y-%m-%d %H:%M:%S')
-gitCommit = $(shell git rev-list -1 HEAD)
+app := $(notdir $(shell pwd))
+goVersion := $(shell go version)
+# echo ${goVersion#go version }
+# strip prefix "go version " from output "go version go1.16.7 darwin/amd64"
+goVersion2 := $(subst go version ,,$(goVersion))
+buildTime := $(shell date '+%Y-%m-%d %H:%M:%S')
+gitCommit := $(shell git rev-list -1 HEAD)
+
 # https://ms2008.github.io/2018/10/08/golang-build-version/
-flags = "-extldflags=-static -s -w -X 'main.buildTime=$(buildTime)' -X main.gitCommit=$(gitCommit) -X 'main.goVersion=$(goVersion)'"
+flags = "-extldflags=-static -s -w -X 'main.buildTime=$(buildTime)' -X main.gitCommit=$(gitCommit) -X 'main.goVersion=$(goVersion2)'"
 
 tool:
 	go get github.com/securego/gosec/cmd/gosec
