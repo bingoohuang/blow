@@ -8,9 +8,18 @@ goVersion := $(shell go version)
 goVersion2 := $(subst go version ,,$(goVersion))
 buildTime := $(shell date '+%Y-%m-%d %H:%M:%S')
 gitCommit := $(shell git rev-list -1 HEAD)
-
+app := $(notdir $(shell pwd))
+goVersion := $(shell go version)
+# echo ${goVersion#go version }
+# strip prefix "go version " from output "go version go1.16.7 darwin/amd64"
+goVersion2 := $(subst go version ,,$(goVersion))
+buildTime := $(shell date '+%Y-%m-%d %H:%M:%S')
+gitCommit := $(shell git rev-list -1 HEAD)
+# https://stackoverflow.com/a/47510909
+pkg := main
+static := -static
 # https://ms2008.github.io/2018/10/08/golang-build-version/
-flags = "-extldflags=-static -s -w -X 'main.buildTime=$(buildTime)' -X main.gitCommit=$(gitCommit) -X 'main.goVersion=$(goVersion2)'"
+flags = "-extldflags=$(static) -s -w -X '$(pkg).buildTime=$(buildTime)' -X $(pkg).gitCommit=$(gitCommit) -X '$(pkg).goVersion=$(goVersion2)'"
 
 tool:
 	go get github.com/securego/gosec/cmd/gosec
