@@ -90,6 +90,7 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 			result := p.formatTableReports(&buf, r, true, useSeconds)
 			resultJson, _ := json.Marshal(result)
 			stdout.Write(resultJson)
+			stdout.Write([]byte("\n"))
 		}
 	} else {
 		var backCursor string
