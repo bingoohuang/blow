@@ -145,7 +145,7 @@ func (s *StreamReport) Collect(records <-chan *ReportRecord) {
 		if r.error != "" {
 			s.errors[r.error]++
 		}
-		if r.conn != "" && s.verbose >= 1 && s.conns != nil {
+		if r.conn != "" {
 			if _, ok := s.conns[r.conn]; !ok {
 				s.totalConns++
 				s.conns[r.conn] = struct{}{}

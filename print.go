@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -68,26 +69,42 @@ func (p *Printer) updateProgressValue(rs *SnapshotReport) {
 	}
 }
 
-func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Duration, useSeconds bool, doneChan <-chan struct{}, requests int64, logf *os.File) {
+func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Duration, useSeconds, onlyResultJson bool,
+	doneChan <-chan struct{}, requests int64, logf *os.File) {
 	if requests == 0 {
 		select {}
 	}
 
-	var buf bytes.Buffer
-	var backCursor string
 	stdout := os.Stdout
 
-	echo := func(isFinal bool) {
-		r := snapshot()
-		p.updateProgressValue(r)
-		stdout.WriteString(backCursor)
+	var echo func(isFinal bool)
+	var buf bytes.Buffer
 
-		buf.Reset()
-		p.formatTableReports(&buf, r, isFinal, useSeconds)
+	if onlyResultJson {
+		echo = func(isFinal bool) {
+			if !isFinal {
+				return
+			}
 
-		n := printLines(buf.Bytes(), stdout)
-		backCursor = fmt.Sprintf("\033[%dA", n)
-		stdout.Sync()
+			r := snapshot()
+			result := p.formatTableReports(&buf, r, true, useSeconds)
+			resultJson, _ := json.Marshal(result)
+			stdout.Write(resultJson)
+		}
+	} else {
+		var backCursor string
+		echo = func(isFinal bool) {
+			r := snapshot()
+			p.updateProgressValue(r)
+			stdout.WriteString(backCursor)
+
+			buf.Reset()
+			p.formatTableReports(&buf, r, isFinal, useSeconds)
+
+			n := printLines(buf.Bytes(), stdout)
+			backCursor = fmt.Sprintf("\033[%dA", n)
+			stdout.Sync()
+		}
 	}
 
 	if interval > 0 && requests != 1 {
@@ -113,6 +130,7 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 
 	logf.WriteString(p.desc + " at " + t + "\n\n")
 	_, _ = logf.Write(buf.Bytes())
+
 	_ = logf.Close()
 }
 
@@ -247,9 +265,16 @@ func formatFloat64(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
-func (p *Printer) formatTableReports(w *bytes.Buffer, r *SnapshotReport, isFinal bool, useSeconds bool) {
+type Report struct {
+	SummaryReport    `json:"Summary"`
+	StatsReport      `json:"Stats"`
+	PercentileReport `json:"Percentile"`
+}
+
+func (p *Printer) formatTableReports(w *bytes.Buffer, r *SnapshotReport, isFinal bool, useSeconds bool) Report {
 	w.WriteString("Summary:\n")
-	writeBulk(w, p.buildSummary(r, isFinal))
+	report := Report{}
+	writeBulk(w, p.buildSummary(r, isFinal, &report.SummaryReport))
 	w.WriteString("\n")
 
 	errorsBulks := p.buildErrors(r)
@@ -259,15 +284,17 @@ func (p *Printer) formatTableReports(w *bytes.Buffer, r *SnapshotReport, isFinal
 		w.WriteString("\n")
 	}
 
-	writeBulkWith(w, p.buildStats(r, useSeconds), "", "  ", "\n")
+	writeBulkWith(w, p.buildStats(r, useSeconds, &report.StatsReport), "", "  ", "\n")
 	w.WriteString("\n")
 
 	w.WriteString("Latency Percentile:\n")
-	writeBulk(w, p.buildPercentile(r, useSeconds))
+	report.PercentileReport = make(map[string]string)
+	writeBulk(w, p.buildPercentile(r, useSeconds, report.PercentileReport))
 	w.WriteString("\n")
 
 	w.WriteString("Latency Histogram:\n")
 	writeBulk(w, p.buildHistogram(r, useSeconds, isFinal))
+	return report
 }
 
 func (p *Printer) buildHistogram(r *SnapshotReport, useSeconds bool, isFinal bool) [][]string {
@@ -301,13 +328,18 @@ func (p *Printer) buildHistogram(r *SnapshotReport, useSeconds bool, isFinal boo
 	return hisBulk
 }
 
-func (p *Printer) buildPercentile(r *SnapshotReport, useSeconds bool) [][]string {
+type PercentileReport map[string]string
+
+func (p *Printer) buildPercentile(r *SnapshotReport, useSeconds bool, report PercentileReport) [][]string {
 	percBulk := make([][]string, 2)
 	percAligns := make([]int, 0, len(r.Percentiles))
 	for _, percentile := range r.Percentiles {
 		perc := formatFloat64(percentile.Percentile * 100)
 		percBulk[0] = append(percBulk[0], "P"+perc)
-		percBulk[1] = append(percBulk[1], durationToString(percentile.Latency, useSeconds))
+		percValue := durationToString(percentile.Latency, useSeconds)
+
+		report["P"+perc] = percValue
+		percBulk[1] = append(percBulk[1], percValue)
 		percAligns = append(percAligns, AlignCenter)
 	}
 	percAligns[0] = AlignLeft
@@ -315,9 +347,22 @@ func (p *Printer) buildPercentile(r *SnapshotReport, useSeconds bool) [][]string
 	return percBulk
 }
 
-func (p *Printer) buildStats(r *SnapshotReport, useSeconds bool) [][]string {
-	dts := func(d time.Duration) string { return durationToString(d, useSeconds) }
+type StatItem struct {
+	Min, Max, StdDev, Mean string
+}
+
+type StatsReport struct {
+	Latency StatItem
+	RPS     StatItem
+}
+
+func (p *Printer) buildStats(r *SnapshotReport, useSeconds bool, stats *StatsReport) [][]string {
 	st := r.Stats
+	dts := func(d time.Duration) string { return durationToString(d, useSeconds) }
+	stats.Latency.Min = dts(st.Min)
+	stats.Latency.Mean = dts(st.Mean)
+	stats.Latency.StdDev = dts(st.StdDev)
+	stats.Latency.Max = dts(st.Max)
 	statsBulk := [][]string{
 		{"Statistics", "Min", "Mean", "StdDev", "Max"},
 		{"  Latency", dts(st.Min), dts(st.Mean), dts(st.StdDev), dts(st.Max)},
@@ -325,6 +370,10 @@ func (p *Printer) buildStats(r *SnapshotReport, useSeconds bool) [][]string {
 	rs := r.RpsStats
 	if rs != nil {
 		fft := func(v float64) string { return formatFloat64(math.Trunc(v*100) / 100.0) }
+		stats.RPS.Min = fft(rs.Min)
+		stats.RPS.Mean = fft(rs.Mean)
+		stats.RPS.StdDev = fft(rs.StdDev)
+		stats.RPS.Max = fft(rs.Max)
 		statsBulk = append(statsBulk, []string{"  RPS", fft(rs.Min), fft(rs.Mean), fft(rs.StdDev), fft(rs.Max)})
 	}
 	alignBulk(statsBulk, AlignLeft, AlignCenter, AlignCenter, AlignCenter, AlignCenter)
@@ -344,11 +393,23 @@ func (p *Printer) buildErrors(r *SnapshotReport) [][]string {
 	return errorsBulks
 }
 
-func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool) [][]string {
-	elapsedLine := []string{"Elapsed", r.Elapsed.Truncate(time.Millisecond).String()}
+type SummaryReport struct {
+	Count       int64
+	Succ        int64
+	Connections int64
+	Elapsed     string
+	RPS         string
+	Reads       string
+	Writes      string
+}
+
+func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool, sr *SummaryReport) [][]string {
+	sr.Elapsed = r.Elapsed.Truncate(time.Millisecond).String()
+	elapsedLine := []string{"Elapsed", sr.Elapsed}
 	if p.maxDuration > 0 && !isFinal {
 		elapsedLine = append(elapsedLine, p.pbDurStr)
 	}
+	sr.Count = r.Count
 	countLine := []string{"Count", strconv.FormatInt(r.Count, 10)}
 	if p.maxNum > 0 && !isFinal {
 		countLine = append(countLine, p.pbNumStr)
@@ -360,17 +421,21 @@ func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool) [][]string {
 		vs := strconv.FormatInt(v, 10)
 		if k != "2xx" {
 			vs = colorize(vs, FgMagentaColor)
+		} else {
+			sr.Succ = v
 		}
 		codesBulks = append(codesBulks, []string{"  " + k, vs})
 	}
 	sort.Slice(codesBulks, func(i, j int) bool { return codesBulks[i][0] < codesBulks[j][0] })
 	summaryBulk = append(summaryBulk, codesBulks...)
-	summaryBulk = append(summaryBulk,
-		[]string{"RPS", fmt.Sprintf("%.3f", r.RPS)},
-		[]string{"Reads", fmt.Sprintf("%.3fMiB/s", r.ReadThroughput)},
-		[]string{"Writes", fmt.Sprintf("%.3fMiB/s", r.WriteThroughput)},
-	)
 
+	sr.RPS = fmt.Sprintf("%.3f", r.RPS)
+	sr.Reads = fmt.Sprintf("%.3fMiB/s", r.ReadThroughput)
+	sr.Writes = fmt.Sprintf("%.3fMiB/s", r.WriteThroughput)
+	summaryBulk = append(summaryBulk,
+		[]string{"RPS", sr.RPS}, []string{"Reads", sr.Reads}, []string{"Writes", sr.Writes})
+
+	sr.Connections = r.Connections
 	if p.verbose >= 1 {
 		summaryBulk = append(summaryBulk, []string{"Connections", fmt.Sprintf("%d", r.Connections)})
 	}

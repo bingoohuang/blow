@@ -32,6 +32,7 @@ var (
 	cert        = flag("cert", "Path to the client's TLS Certificate").ExistingFile()
 	key         = flag("key", "Path to the client's TLS Certificate Private Key").ExistingFile()
 	insecure    = flag("insecure", "Controls whether a client verifies the server's certificate chain and host name").Short('k').Bool()
+	reportType  = flag("report", "How to report, dynamic (default) / json").Enum("json", "dynamic")
 
 	port            = flag("port", "Listen port for serve Web UI").Default("18888").Int()
 	timeout         = flag("timeout", "Timeout for each http request").PlaceHolder("DURATION").Duration()
@@ -171,6 +172,7 @@ func main() {
 		return
 	}
 
+	var ln net.Listener
 	// description
 	desc := fmt.Sprintf("Benchmarking %s", *urlAddr)
 	if *requests > 0 {
@@ -180,22 +182,26 @@ func main() {
 		desc += fmt.Sprintf(" for %s", *duration)
 	}
 	desc += fmt.Sprintf(" using %d connection(s).", *concurrency)
-	fmt.Println(desc)
 
-	// charts listener
-	var ln net.Listener
-	if *port > 0 && *requests != 1 {
-		*port = getFreePort(*port)
-	}
+	onlyResultJson := *reportType == "json"
 
-	if *port > 0 && *requests != 1 {
-		addr := fmt.Sprintf(":%d", *port)
-		if ln, err = net.Listen("tcp", addr); err != nil {
-			errAndExit(err.Error())
+	if !onlyResultJson {
+		fmt.Println(desc)
+
+		// charts listener
+		if *port > 0 && *requests != 1 {
+			*port = getFreePort(*port)
 		}
-		fmt.Printf("@ Real-time charts is listening on http://%s\n", ln.Addr().String())
+
+		if *port > 0 && *requests != 1 {
+			addr := fmt.Sprintf(":%d", *port)
+			if ln, err = net.Listen("tcp", addr); err != nil {
+				errAndExit(err.Error())
+			}
+			fmt.Printf("@ Real-time charts is listening on http://%s\n", ln.Addr().String())
+		}
+		fmt.Printf("\n")
 	}
-	fmt.Printf("\n")
 
 	// do request
 	go requester.Run()
@@ -215,7 +221,8 @@ func main() {
 
 	// terminal printer
 	printer := NewPrinter(*requests, *duration, *verbose, desc)
-	printer.PrintLoop(report.Snapshot, 200*time.Millisecond, false, report.Done(), *requests, logf)
+
+	printer.PrintLoop(report.Snapshot, 200*time.Millisecond, false, onlyResultJson, report.Done(), *requests, logf)
 }
 
 func createLogFile() *os.File {
