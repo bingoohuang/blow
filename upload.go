@@ -28,11 +28,9 @@ func dealUploadFilePath(uploadFilepath string, postFileCh chan string) {
 		log.Fatalf("stat file %s error  %v", uploadFilepath, err)
 	}
 
-	isSingleFile := !fs.IsDir()
-
 	defer close(postFileCh)
 
-	if isSingleFile {
+	if !fs.IsDir() {
 		postFileCh <- uploadFilepath
 		return
 	}
