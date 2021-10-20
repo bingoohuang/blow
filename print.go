@@ -116,7 +116,8 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 	}
 
 	if requests == 1 && logf != nil {
-		if p.printError(&buf, snapshot()) {
+		r := snapshot()
+		if p.printError(&buf, r) {
 			stdout.Write(buf.Bytes())
 		} else {
 			tag := If(p.upload == "", "### ", "HTTP/1")
@@ -124,6 +125,11 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 				stdout.WriteString(lastLog)
 			}
 		}
+
+		buf.Reset()
+		var summary SummaryReport
+		writeBulk(&buf, p.buildSummary(r, true, &summary))
+		stdout.Write(buf.Bytes())
 	}
 
 	t := time.Now().Format(`20060102150405`)

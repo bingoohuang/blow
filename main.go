@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/alecthomas/kingpin.v3-unstable"
@@ -27,7 +28,7 @@ var (
 	qps         = flag("qps", "Rate limit, in queries per second per worker. Default is no rate limit").Short('q').Float64()
 	stream      = flag("stream", "Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory").Default("false").Bool()
 	method      = flag("method", "HTTP method").Short('m').String()
-	network     = flag("network", "Network simulation, local: simulates local network, lan: simulates local area network, wan: simulates wide area network, longhaul: simulates bad network, or Kbps:latency:mtu like 0:20ms:9000").String()
+	network     = flag("network", "Network simulation, local: simulates local network, lan: local, wan: wide, bad: bad network, or Kps:latency like 20:20ms").String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
 	host        = flag("host", "Host header").String()
 	basicAuth   = flag("user", "basic auth username:password").String()
@@ -180,6 +181,9 @@ func main() {
 	}
 
 	requester.logf = logf
+	if logf != nil {
+		requester.logfLock = &sync.Mutex{}
+	}
 	requester.think = think
 
 	var ln net.Listener

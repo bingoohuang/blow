@@ -123,10 +123,6 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 		QPS:         *qps,
 	}
 
-	if r.logf != nil {
-		r.logfLock = &sync.Mutex{}
-	}
-
 	client, header, err := buildRequestClient(clientOpt, &r.readBytes, &r.writeBytes)
 	if err != nil {
 		return nil, err
@@ -201,7 +197,8 @@ func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fas
 	} else {
 		httpClient.Dial = fasthttpproxy.FasthttpProxyHTTPDialerTimeout(opt.dialTimeout)
 	}
-	httpClient.Dial = ThroughputInterceptorDial(opt.network, httpClient.Dial, r, w)
+
+	httpClient.Dial = ThroughputStatDial(networkWrap(opt.network), httpClient.Dial, r, w)
 
 	tlsConfig, err := buildTLSConfig(opt)
 	if err != nil {

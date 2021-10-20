@@ -1,13 +1,13 @@
 package main
 
 import (
+	"github.com/bingoohuang/blow/lossy"
 	"net"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/bingoohuang/blow/latency"
 	"github.com/valyala/fasthttp"
 )
 
@@ -34,39 +34,49 @@ func (c *MyConn) Write(b []byte) (n int, err error) {
 	return
 }
 
-func ThroughputInterceptorDial(network string, dial fasthttp.DialFunc, r *int64, w *int64) fasthttp.DialFunc {
+type networkWrapper func(net.Conn) net.Conn
+
+func ThroughputStatDial(wrap networkWrapper, dial fasthttp.DialFunc, r *int64, w *int64) fasthttp.DialFunc {
 	return func(addr string) (net.Conn, error) {
 		conn, err := dial(addr)
 		if err != nil {
 			return nil, err
 		}
 
-		if network != "" {
-			n := parseNetwork(network)
-			if conn, err = n.Conn(conn); err != nil {
-				return nil, err
-			}
-		}
-		return NewMyConn(conn, r, w)
+		return NewMyConn(wrap(conn), r, w)
 	}
 }
 
-func parseNetwork(network string) latency.Network {
+func networkWrap(network string) networkWrapper {
+	kps := 0
+	var latency time.Duration
+	noop := func(conn net.Conn) net.Conn { return conn }
 	switch strings.ToLower(network) {
-	case "local":
-		return latency.Local
-	case "lan":
-		return latency.LAN
-	case "wan":
-		return latency.WAN
-	case "longhaul":
-		return latency.Longhaul
+	case "", "local":
+	case "lan": // 100M
+		kps = 100 * 1024 * 1024
+		latency = 2 * time.Millisecond
+	case "wan": // 20M
+		kps = 20 * 1024 * 1024
+		latency = 30 * time.Millisecond
+	case "bad":
+		kps = 20 * 1024 * 1024
+		latency = 200 * time.Millisecond
 	default:
-		parts := strings.SplitN(network, ":", 3)
-		kbps, _ := strconv.Atoi(parts[0])
-		delay, _ := time.ParseDuration(parts[1])
-		mtu, _ := strconv.Atoi(parts[2])
+		parts := strings.SplitN(network, ":", -1)
+		if len(parts) >= 2 {
+			kps, _ = strconv.Atoi(parts[0])
+			latency, _ = time.ParseDuration(parts[1])
+		} else {
+			return noop
+		}
+	}
 
-		return latency.Network{kbps, delay, mtu}
+	if kps == 0 && latency == 0 {
+		return noop
+	}
+
+	return func(conn net.Conn) net.Conn {
+		return lossy.NewConn(conn, kps*1024, latency, latency)
 	}
 }

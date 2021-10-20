@@ -156,7 +156,6 @@ func (c *conn) Read(p []byte) (n int, err error) {
 // coordination with the other side.
 func (c *conn) sync() error {
 	const (
-		pingMsg  = "syncPing"
 		warmup   = 10               // minimum number of iterations to measure latency
 		giveUp   = 50               // maximum number of iterations to measure latency
 		accuracy = time.Millisecond // req'd accuracy to stop early
@@ -166,17 +165,6 @@ func (c *conn) sync() error {
 	type syncMsg struct {
 		SendT int64 // Time sent.  If zero, stop.
 		RecvT int64 // Time received.  If zero, fill in and respond.
-	}
-
-	// A trivial handshake
-	if err := binary.Write(c.Conn, binary.BigEndian, []byte(pingMsg)); err != nil {
-		return err
-	}
-	var ping [8]byte
-	if err := binary.Read(c.Conn, binary.BigEndian, &ping); err != nil {
-		return err
-	} else if string(ping[:]) != pingMsg {
-		return fmt.Errorf("malformed handshake message: %v (want %q)", ping, pingMsg)
 	}
 
 	// Both sides are alive and syncing.  Calculate network delay / clock skew.
