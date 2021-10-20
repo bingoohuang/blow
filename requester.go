@@ -53,39 +53,6 @@ func init() {
 	}()
 }
 
-type MyConn struct {
-	net.Conn
-	r, w *int64
-}
-
-func NewMyConn(conn net.Conn, r, w *int64) (*MyConn, error) {
-	return &MyConn{Conn: conn, r: r, w: w}, nil
-}
-
-func (c *MyConn) Read(b []byte) (n int, err error) {
-	if n, err = c.Conn.Read(b); n > 0 {
-		atomic.AddInt64(c.r, int64(n))
-	}
-	return
-}
-
-func (c *MyConn) Write(b []byte) (n int, err error) {
-	if n, err = c.Conn.Write(b); n > 0 {
-		atomic.AddInt64(c.w, int64(n))
-	}
-	return
-}
-
-func ThroughputInterceptorDial(dial fasthttp.DialFunc, r *int64, w *int64) fasthttp.DialFunc {
-	return func(addr string) (net.Conn, error) {
-		conn, err := dial(addr)
-		if err != nil {
-			return nil, err
-		}
-		return NewMyConn(conn, r, w)
-	}
-}
-
 type Requester struct {
 	concurrency int
 	verbose     int
@@ -138,9 +105,10 @@ type ClientOpt struct {
 	host        string
 	upload      string
 	basicAuth   string
+	network     string
 }
 
-func NewRequester(concurrency, verbose int, requests int64, logf *os.File, duration time.Duration, clientOpt *ClientOpt, think *ThinkTime) (*Requester, error) {
+func NewRequester(concurrency, verbose int, requests int64, duration time.Duration, clientOpt *ClientOpt) (*Requester, error) {
 	maxResult := concurrency * 100
 	if maxResult > 8192 {
 		maxResult = 8192
@@ -148,7 +116,6 @@ func NewRequester(concurrency, verbose int, requests int64, logf *os.File, durat
 	r := &Requester{
 		concurrency: concurrency,
 		requests:    requests,
-		logf:        logf,
 		duration:    duration,
 		clientOpt:   clientOpt,
 		recordChan:  make(chan *ReportRecord, maxResult),
@@ -166,7 +133,6 @@ func NewRequester(concurrency, verbose int, requests int64, logf *os.File, durat
 	}
 	r.httpClient = client
 	r.httpHeader = header
-	r.think = think
 
 	if clientOpt.upload != "" {
 		if pos := strings.IndexRune(clientOpt.upload, ':'); pos > 0 {
@@ -235,7 +201,7 @@ func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fas
 	} else {
 		httpClient.Dial = fasthttpproxy.FasthttpProxyHTTPDialerTimeout(opt.dialTimeout)
 	}
-	httpClient.Dial = ThroughputInterceptorDial(httpClient.Dial, r, w)
+	httpClient.Dial = ThroughputInterceptorDial(opt.network, httpClient.Dial, r, w)
 
 	tlsConfig, err := buildTLSConfig(opt)
 	if err != nil {
