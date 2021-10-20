@@ -15,6 +15,7 @@ import (
 	"time"
 
 	_ "embed"
+
 	cors "github.com/AdhityaRamadhanus/fasthttpcors"
 	"github.com/go-echarts/go-echarts/v2/charts"
 	"github.com/go-echarts/go-echarts/v2/components"

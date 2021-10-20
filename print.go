@@ -40,10 +40,7 @@ type Printer struct {
 	pbDurStr    string
 	verbose     int
 	desc        string
-}
-
-func NewPrinter(maxNum int64, maxDuration time.Duration, verbose int, desc string) *Printer {
-	return &Printer{maxNum: maxNum, maxDuration: maxDuration, verbose: verbose, desc: desc}
+	upload      string
 }
 
 func (p *Printer) updateProgressValue(rs *SnapshotReport) {
@@ -119,8 +116,13 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 	}
 
 	if requests == 1 && logf != nil {
-		if lastLog := getLastLog(logf); lastLog != "" {
-			stdout.WriteString(lastLog)
+		if p.printError(&buf, snapshot()) {
+			stdout.Write(buf.Bytes())
+		} else {
+			tag := If(p.upload == "", "### ", "HTTP/1")
+			if lastLog := getLastLog(logf, tag); lastLog != "" {
+				stdout.WriteString(lastLog)
+			}
 		}
 	}
 
@@ -133,6 +135,13 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 	_, _ = logf.Write(buf.Bytes())
 
 	_ = logf.Close()
+}
+
+func If(ok bool, a, b string) string {
+	if ok {
+		return a
+	}
+	return b
 }
 
 func tick(interval time.Duration, echo func(), doneChan <-chan struct{}) {
@@ -149,9 +158,9 @@ func tick(interval time.Duration, echo func(), doneChan <-chan struct{}) {
 	}
 }
 
-func getLastLog(f *os.File) string {
+func getLastLog(f *os.File, tag string) string {
 	found := false
-	ch := make([]byte, 2)
+	ch := make([]byte, len(tag))
 	var cursor int64
 	for {
 		cursor--
@@ -165,7 +174,7 @@ func getLastLog(f *os.File) string {
 			return ""
 		}
 
-		if n == 2 && ch[0] == '#' && ch[1] == ' ' { // stop if we find last log
+		if n == len(tag) && string(ch) == tag { // stop if we find last log
 			found = true
 			break
 		}
@@ -177,7 +186,7 @@ func getLastLog(f *os.File) string {
 
 	buffer := make([]byte, -cursor)
 	n, _ := f.Read(buffer)
-	return "\n# " + string(buffer[:n])
+	return "\n" + tag + string(buffer[:n])
 }
 
 func printLines(result []byte, stdout *os.File) int {
@@ -278,12 +287,7 @@ func (p *Printer) formatTableReports(w *bytes.Buffer, r *SnapshotReport, isFinal
 	writeBulk(w, p.buildSummary(r, isFinal, &report.SummaryReport))
 	w.WriteString("\n")
 
-	errorsBulks := p.buildErrors(r)
-	if errorsBulks != nil {
-		w.WriteString("Error:\n")
-		writeBulk(w, errorsBulks)
-		w.WriteString("\n")
-	}
+	p.printError(w, r)
 
 	writeBulkWith(w, p.buildStats(r, useSeconds, &report.StatsReport), "", "  ", "\n")
 	w.WriteString("\n")
@@ -296,6 +300,17 @@ func (p *Printer) formatTableReports(w *bytes.Buffer, r *SnapshotReport, isFinal
 	w.WriteString("Latency Histogram:\n")
 	writeBulk(w, p.buildHistogram(r, useSeconds, isFinal))
 	return report
+}
+
+func (p *Printer) printError(w *bytes.Buffer, r *SnapshotReport) bool {
+	if errorsBulks := p.buildErrors(r); errorsBulks != nil {
+		w.WriteString("Error:\n")
+		writeBulk(w, errorsBulks)
+		w.WriteString("\n")
+		return true
+	}
+
+	return false
 }
 
 func (p *Printer) buildHistogram(r *SnapshotReport, useSeconds bool, isFinal bool) [][]string {

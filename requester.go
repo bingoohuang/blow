@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -95,8 +96,10 @@ type Requester struct {
 	httpHeader  *fasthttp.RequestHeader
 
 	recordChan chan *ReportRecord
-	closeOnce  sync.Once
-	wg         sync.WaitGroup
+	uploadChan chan string
+
+	closeOnce sync.Once
+	wg        sync.WaitGroup
 
 	readBytes  int64
 	writeBytes int64
@@ -108,6 +111,9 @@ type Requester struct {
 
 	// Qps is the rate limit in queries per second.
 	QPS float64
+
+	upload          string
+	uploadFileField string
 }
 
 type ClientOpt struct {
@@ -130,6 +136,8 @@ type ClientOpt struct {
 	socks5Proxy string
 	contentType string
 	host        string
+	upload      string
+	basicAuth   string
 }
 
 func NewRequester(concurrency, verbose int, requests int64, logf *os.File, duration time.Duration, clientOpt *ClientOpt, think *ThinkTime) (*Requester, error) {
@@ -159,12 +167,27 @@ func NewRequester(concurrency, verbose int, requests int64, logf *os.File, durat
 	r.httpClient = client
 	r.httpHeader = header
 	r.think = think
+
+	if clientOpt.upload != "" {
+		if pos := strings.IndexRune(clientOpt.upload, ':'); pos > 0 {
+			r.uploadFileField = clientOpt.upload[:pos]
+			r.upload = clientOpt.upload[pos+1:]
+		} else {
+			r.uploadFileField = "file"
+			r.upload = clientOpt.upload
+		}
+	}
+
+	if r.upload != "" {
+		r.uploadChan = make(chan string, 1)
+		go dealUploadFilePath(r.upload, r.uploadChan)
+	}
+
 	return r, nil
 }
 
 func addMissingPort(addr string, isTLS bool) string {
-	n := strings.Index(addr, ":")
-	if n >= 0 {
+	if n := strings.Index(addr, ":"); n >= 0 {
 		return addr
 	}
 	port := 80
@@ -238,6 +261,10 @@ func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fas
 		requestHeader.Set(n[0], n[1])
 	}
 
+	if opt.basicAuth != "" {
+		requestHeader.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(opt.basicAuth)))
+	}
+
 	return httpClient, &requestHeader, nil
 }
 
@@ -258,7 +285,7 @@ func adjustMethod(opt *ClientOpt) string {
 		return opt.method
 	}
 
-	if len(opt.bodyBytes) > 0 || opt.bodyFile != "" {
+	if opt.upload != "" || len(opt.bodyBytes) > 0 || opt.bodyFile != "" {
 		return "POST"
 	}
 
@@ -267,7 +294,11 @@ func adjustMethod(opt *ClientOpt) string {
 
 func (r *Requester) Cancel()                          { r.cancel() }
 func (r *Requester) RecordChan() <-chan *ReportRecord { return r.recordChan }
-func (r *Requester) closeRecord()                     { r.closeOnce.Do(func() { close(r.recordChan) }) }
+func (r *Requester) closeRecord() {
+	r.closeOnce.Do(func() {
+		close(r.recordChan)
+	})
+}
 
 func (r *Requester) DoRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) {
 	t1 := time.Now()
@@ -307,7 +338,7 @@ func (r *Requester) logDetail(req *fasthttp.Request, rsp *fasthttp.Response, rr 
 	r.logfLock.Lock()
 	defer r.logfLock.Unlock()
 
-	_, _ = r.logf.WriteString(fmt.Sprintf("# %s time: %s cost: %s\n",
+	_, _ = r.logf.WriteString(fmt.Sprintf("### %s time: %s cost: %s\n",
 		rr.conn, time.Now().Format(time.RFC3339Nano), rr.cost))
 
 	bw := bufio.NewWriter(r.logf)
@@ -411,6 +442,14 @@ func (r *Requester) Run() {
 						continue
 					}
 					req.SetBodyStream(file, -1)
+				} else if r.upload != "" {
+					file := <-r.uploadChan
+					data, cType, err := readMultipartFile(r.uploadFileField, file)
+					if err != nil {
+						panic(err)
+					}
+					setHeader(req, "Content-Type", cType)
+					req.SetBody(data)
 				} else {
 					req.SetBodyRaw(r.clientOpt.bodyBytes)
 				}
@@ -429,4 +468,11 @@ func (r *Requester) Run() {
 
 	r.wg.Wait()
 	r.closeRecord()
+}
+
+// setHeader set request header if value is not empty.
+func setHeader(r *fasthttp.Request, header, value string) {
+	if value != "" {
+		r.Header.Set(header, value)
+	}
 }

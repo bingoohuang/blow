@@ -23,11 +23,13 @@ var (
 	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
 
 	body        = flag("body", "HTTP request body, or @file to read from").Short('b').String()
+	upload      = flag("upload", "HTTP upload multipart form file or directory, or add prefix file: to set form field name ").Short('u').String()
 	qps         = flag("qps", "Rate limit, in queries per second per worker. Default is no rate limit").Short('q').Float64()
 	stream      = flag("stream", "Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory").Default("false").Bool()
 	method      = flag("method", "HTTP method").Short('m').String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
 	host        = flag("host", "Host header").String()
+	basicAuth   = flag("user", "basic auth username:password").String()
 	contentType = flag("content", "Content-Type header").Short('T').String()
 	cert        = flag("cert", "Path to the client's TLS Certificate").ExistingFile()
 	key         = flag("key", "Path to the client's TLS Certificate Private Key").ExistingFile()
@@ -164,6 +166,9 @@ func main() {
 		socks5Proxy: *socks5,
 		contentType: *contentType,
 		host:        *host,
+
+		upload:    *upload,
+		basicAuth: *basicAuth,
 	}
 
 	requester, err := NewRequester(*concurrency, *verbose, *requests, logf, *duration, &clientOpt, think)
@@ -220,9 +225,8 @@ func main() {
 	}
 
 	// terminal printer
-	printer := NewPrinter(*requests, *duration, *verbose, desc)
-
-	printer.PrintLoop(report.Snapshot, 200*time.Millisecond, false, onlyResultJson, report.Done(), *requests, logf)
+	p := &Printer{maxNum: *requests, maxDuration: *duration, verbose: *verbose, desc: desc, upload: requester.upload}
+	p.PrintLoop(report.Snapshot, 200*time.Millisecond, false, onlyResultJson, report.Done(), *requests, logf)
 }
 
 func createLogFile() *os.File {
