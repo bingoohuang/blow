@@ -13,10 +13,12 @@ Features:
 
 - network simulating. e.g. `blow :9335 --network 200K` to simulating bandwidth 200KB/s without latency.
 - network simulating. e.g. `blow :9335 --network 20M:500ms` to simulating bandwidth 20M/s and latency 500ms.
-- uploading files in a dir. e.g. `blow :9335 --upload image-dir --user scott:tiger -n 1`
-- uploading single file. e.g. `blow :9335 --upload 1.jpg --user scott:tiger -n 1`
+- uploading files in a dir. e.g. `blow :9335 --upload image-dir -n 1`
+- uploading single file. e.g. `blow :9335 --upload 1.jpg -n 1`
 - uploading big files without cache. e.g. `blow :9335 --upload .:nocache --user scott:tiger -n 1`
+- basic auth. e.g. `blow :9335 --user username:password`
 - thinking time among requests. e.g. `blow :8080 --think 100ms`, `blow :8080 --think 100-300ms`
+- QPS to limit requests per second and per worker. e.g. `blow :8080 --qps 1000`
 - help `blow --help`
 
 Blow runs at a specified connections(option `-c`) concurrently and **real-time** records a summary statistics, histogram
@@ -73,11 +75,6 @@ Latency Histogram:
 - [License](#license)
 
 ## Installation
-
-Binary and image distributions are available through the [releases](https://github.com/six-ddc/plow/releases)
-assets page.
-
-### Via Go
 
 ```bash
 go get -u github.com/bingoohuang/blow
