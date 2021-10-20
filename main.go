@@ -171,11 +171,14 @@ func main() {
 		basicAuth: *basicAuth,
 	}
 
-	requester, err := NewRequester(*concurrency, *verbose, *requests, logf, *duration, &clientOpt, think)
+	requester, err := NewRequester(*concurrency, *verbose, *requests, *duration, &clientOpt)
 	if err != nil {
 		errAndExit(err.Error())
 		return
 	}
+
+	requester.logf = logf
+	requester.think = think
 
 	var ln net.Listener
 	// description

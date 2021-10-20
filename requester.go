@@ -140,7 +140,7 @@ type ClientOpt struct {
 	basicAuth   string
 }
 
-func NewRequester(concurrency, verbose int, requests int64, logf *os.File, duration time.Duration, clientOpt *ClientOpt, think *ThinkTime) (*Requester, error) {
+func NewRequester(concurrency, verbose int, requests int64, duration time.Duration, clientOpt *ClientOpt) (*Requester, error) {
 	maxResult := concurrency * 100
 	if maxResult > 8192 {
 		maxResult = 8192
@@ -148,7 +148,6 @@ func NewRequester(concurrency, verbose int, requests int64, logf *os.File, durat
 	r := &Requester{
 		concurrency: concurrency,
 		requests:    requests,
-		logf:        logf,
 		duration:    duration,
 		clientOpt:   clientOpt,
 		recordChan:  make(chan *ReportRecord, maxResult),
@@ -166,7 +165,6 @@ func NewRequester(concurrency, verbose int, requests int64, logf *os.File, durat
 	}
 	r.httpClient = client
 	r.httpHeader = header
-	r.think = think
 
 	if clientOpt.upload != "" {
 		if pos := strings.IndexRune(clientOpt.upload, ':'); pos > 0 {
