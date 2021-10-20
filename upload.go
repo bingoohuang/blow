@@ -62,10 +62,12 @@ type cacheItem struct {
 
 // readMultipartFile read file filePath for upload in multipart,
 // return multipart content, form data content type and error.
-func readMultipartFile(fieldName, filePath string) (data []byte, contentType string, err error) {
-	if load, ok := filePathCache.Load(filePath); ok {
-		item := load.(cacheItem)
-		return item.data, item.contentType, nil
+func readMultipartFile(nocache bool, fieldName, filePath string) (data []byte, contentType string, err error) {
+	if !nocache {
+		if load, ok := filePathCache.Load(filePath); ok {
+			item := load.(cacheItem)
+			return item.data, item.contentType, nil
+		}
 	}
 
 	var buffer bytes.Buffer
@@ -83,7 +85,10 @@ func readMultipartFile(fieldName, filePath string) (data []byte, contentType str
 	_ = writer.Close()
 
 	item := cacheItem{data: buffer.Bytes(), contentType: writer.FormDataContentType()}
-	filePathCache.Store(filePath, item)
+
+	if !nocache {
+		filePathCache.Store(filePath, item)
+	}
 
 	return item.data, item.contentType, nil
 }

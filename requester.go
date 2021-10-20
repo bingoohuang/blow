@@ -81,6 +81,7 @@ type Requester struct {
 
 	upload          string
 	uploadFileField string
+	noUploadCache   bool
 }
 
 type ClientOpt struct {
@@ -92,6 +93,7 @@ type ClientOpt struct {
 
 	certPath string
 	keyPath  string
+
 	insecure bool
 
 	maxConns     int
@@ -104,8 +106,9 @@ type ClientOpt struct {
 	contentType string
 	host        string
 	upload      string
-	basicAuth   string
-	network     string
+
+	basicAuth string
+	network   string
 }
 
 func NewRequester(concurrency, verbose int, requests int64, duration time.Duration, clientOpt *ClientOpt) (*Requester, error) {
@@ -131,6 +134,12 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 	r.httpHeader = header
 
 	if clientOpt.upload != "" {
+		const nocacheTag = ":nocache"
+		if strings.HasSuffix(clientOpt.upload, nocacheTag) {
+			r.noUploadCache = true
+			clientOpt.upload = strings.TrimSuffix(clientOpt.upload, nocacheTag)
+		}
+
 		if pos := strings.IndexRune(clientOpt.upload, ':'); pos > 0 {
 			r.uploadFileField = clientOpt.upload[:pos]
 			r.upload = clientOpt.upload[pos+1:]
@@ -407,7 +416,7 @@ func (r *Requester) Run() {
 					req.SetBodyStream(file, -1)
 				} else if r.upload != "" {
 					file := <-r.uploadChan
-					data, cType, err := readMultipartFile(r.uploadFileField, file)
+					data, cType, err := readMultipartFile(r.noUploadCache, r.uploadFileField, file)
 					if err != nil {
 						panic(err)
 					}

@@ -28,7 +28,7 @@ var (
 	qps         = flag("qps", "Rate limit, in queries per second per worker. Default is no rate limit").Short('q').Float64()
 	stream      = flag("stream", "Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory").Default("false").Bool()
 	method      = flag("method", "HTTP method").Short('m').String()
-	network     = flag("network", "Network simulation, local: simulates local network, lan: local, wan: wide, bad: bad network, or Kps:latency like 20:20ms").String()
+	network     = flag("network", "Network simulation, local: simulates local network, lan: local, wan: wide, bad: bad network, or BPS:latency like 20M:20ms").String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
 	host        = flag("host", "Host header").String()
 	basicAuth   = flag("user", "basic auth username:password").String()

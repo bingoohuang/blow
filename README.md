@@ -1,4 +1,4 @@
-# blow <!-- omit in toc -->
+# blow
 
 [![build](https://github.com/bingoohuang/blow/actions/workflows/release.yml/badge.svg)](https://github.com/bingoohuang/blow/actions/workflows/release.yml)
 [![Homebrew](https://img.shields.io/badge/dynamic/json.svg?url=https://formulae.brew.sh/api/formula/plow.json&query=$.versions.stable&label=homebrew)](https://formulae.brew.sh/formula/plow)
@@ -8,6 +8,16 @@
 Blow is a HTTP(S) benchmarking tool, written in Golang. It uses
 excellent [fasthttp](https://github.com/valyala/fasthttp#http-client-comparison-with-nethttp) instead of Go's default
 net/http due to its lightning fast performance.
+
+Features:
+
+- network simulating. e.g. `blow :9335 --network 200K` to simulating bandwidth 200KB/s without latency.
+- network simulating. e.g. `blow :9335 --network 20M:500ms` to simulating bandwidth 20M/s and latency 500ms.
+- uploading files in a dir. e.g. `blow :9335 --upload image-dir --user scott:tiger -n 1`
+- uploading single file. e.g. `blow :9335 --upload 1.jpg --user scott:tiger -n 1`
+- uploading big files without cache. e.g. `blow :9335 --upload .:nocache --user scott:tiger -n 1`
+- thinking time among requests. e.g. `blow :8080 --think 100ms`, `blow :8080 --think 100-300ms`
+- help `blow --help`
 
 Blow runs at a specified connections(option `-c`) concurrently and **real-time** records a summary statistics, histogram
 of execution time and calculates percentiles to display on Web UI and terminal. It can run for a set duration(

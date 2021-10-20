@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/AdhityaRamadhanus/fasthttpcors v0.0.0-20170121111917-d4c07198763a
 	github.com/beorn7/perks v1.0.1
+	github.com/dustin/go-humanize v1.0.0
 	github.com/go-echarts/go-echarts/v2 v2.2.4
 	github.com/karrick/godirwalk v1.16.1
 	github.com/mattn/go-isatty v0.0.14

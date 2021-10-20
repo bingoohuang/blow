@@ -35,7 +35,7 @@ type conn struct {
 // maxLatency should be equal or greater than minLatency.
 // If bandwidth is not unlimited and there's no other packets waiting to be delivered,
 // time to deliver a packet is (len(packet) + headerOverhead) / bandwidth + randomDuration(minLatency, maxLatency)
-func NewConn(c net.Conn, bandwidth int, minLatency, maxLatency time.Duration) net.Conn {
+func NewConn(c net.Conn, bandwidth uint64, minLatency, maxLatency time.Duration) net.Conn {
 	return &conn{
 		Conn:              c,
 		minLatency:        minLatency,
@@ -47,7 +47,7 @@ func NewConn(c net.Conn, bandwidth int, minLatency, maxLatency time.Duration) ne
 	}
 }
 
-func parseTimeToWaitPerByte(bandwidth int) float64 {
+func parseTimeToWaitPerByte(bandwidth uint64) float64 {
 	if bandwidth <= 0 {
 		return 0
 	}

@@ -3,11 +3,11 @@ package main
 import (
 	"github.com/bingoohuang/blow/lossy"
 	"net"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/valyala/fasthttp"
 )
 
@@ -48,35 +48,35 @@ func ThroughputStatDial(wrap networkWrapper, dial fasthttp.DialFunc, r *int64, w
 }
 
 func networkWrap(network string) networkWrapper {
-	kps := 0
+	var bandwidth uint64
 	var latency time.Duration
 	noop := func(conn net.Conn) net.Conn { return conn }
 	switch strings.ToLower(network) {
 	case "", "local":
 	case "lan": // 100M
-		kps = 100 * 1024 * 1024
+		bandwidth = 100 * 1024 * 1024
 		latency = 2 * time.Millisecond
 	case "wan": // 20M
-		kps = 20 * 1024 * 1024
+		bandwidth = 20 * 1024 * 1024
 		latency = 30 * time.Millisecond
 	case "bad":
-		kps = 20 * 1024 * 1024
+		bandwidth = 20 * 1024 * 1024
 		latency = 200 * time.Millisecond
 	default:
 		parts := strings.SplitN(network, ":", -1)
+		if len(parts) >= 1 {
+			bandwidth, _ = humanize.ParseBytes(parts[0])
+		}
 		if len(parts) >= 2 {
-			kps, _ = strconv.Atoi(parts[0])
 			latency, _ = time.ParseDuration(parts[1])
-		} else {
-			return noop
 		}
 	}
 
-	if kps == 0 && latency == 0 {
+	if bandwidth == 0 && latency == 0 {
 		return noop
 	}
 
 	return func(conn net.Conn) net.Conn {
-		return lossy.NewConn(conn, kps*1024, latency, latency)
+		return lossy.NewConn(conn, bandwidth, latency, latency)
 	}
 }
