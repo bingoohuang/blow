@@ -420,7 +420,7 @@ type SummaryReport struct {
 	Succ        int64
 	Connections int64
 	Elapsed     string
-	RPS         string
+	RPS, RPS2xx string
 	Reads       string
 	Writes      string
 }
@@ -439,10 +439,12 @@ func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool, sr *SummaryRepor
 	summaryBulk := [][]string{elapsedLine, countLine}
 
 	codesBulks := make([][]string, 0, len(r.Codes))
+	hasNon2xx := false
 	for k, v := range r.Codes {
 		vs := strconv.FormatInt(v, 10)
 		if k != "2xx" {
 			vs = colorize(vs, FgMagentaColor)
+			hasNon2xx = true
 		} else {
 			sr.Succ = v
 		}
@@ -452,11 +454,18 @@ func (p *Printer) buildSummary(r *SnapshotReport, isFinal bool, sr *SummaryRepor
 	summaryBulk = append(summaryBulk, codesBulks...)
 
 	sr.RPS = fmt.Sprintf("%.3f", r.RPS)
+	sr.RPS2xx = fmt.Sprintf("%.3f", r.RPS2xx)
 	sr.Reads = fmt.Sprintf("%.3fMiB/s", r.ReadThroughput)
 	sr.Writes = fmt.Sprintf("%.3fMiB/s", r.WriteThroughput)
-	summaryBulk = append(summaryBulk,
-		[]string{"RPS", sr.RPS}, []string{"Reads", sr.Reads}, []string{"Writes", sr.Writes})
-
+	if hasNon2xx {
+		summaryBulk = append(summaryBulk,
+			[]string{"RPS", sr.RPS}, []string{"RPS(2xx)", sr.RPS2xx},
+			[]string{"Reads", sr.Reads}, []string{"Writes", sr.Writes})
+	} else {
+		summaryBulk = append(summaryBulk,
+			[]string{"RPS", sr.RPS},
+			[]string{"Reads", sr.Reads}, []string{"Writes", sr.Writes})
+	}
 	sr.Connections = r.Connections
 	if p.verbose >= 1 {
 		summaryBulk = append(summaryBulk, []string{"Connections", fmt.Sprintf("%d", r.Connections)})
