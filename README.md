@@ -148,10 +148,6 @@ eval "$(plow --completion-script-bash)"
 eval "$(plow --completion-script-zsh)"
 ```
 
-## Stargazers
-
-[![Stargazers over time](https://starchart.cc/six-ddc/plow.svg)](https://starchart.cc/six-ddc/plow)
-
 ## License
 
 See [LICENSE](https://github.com/six-ddc/plow/blob/master/LICENSE).
