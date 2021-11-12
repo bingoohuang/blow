@@ -31,6 +31,7 @@ var (
 	network     = flag("network", "Network simulation, local: simulates local network, lan: local, wan: wide, bad: bad network, or BPS:latency like 20M:20ms").String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
 	host        = flag("host", "Host header").String()
+	enableGzip  = flag("gzip", "Enabled gzip if gzipped content is less more").Bool()
 	basicAuth   = flag("user", "basic auth username:password").String()
 	contentType = flag("content", "Content-Type header").Short('T').String()
 	cert        = flag("cert", "Path to the client's TLS Certificate").ExistingFile()

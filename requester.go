@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -423,7 +425,20 @@ func (r *Requester) Run() {
 					setHeader(req, "Content-Type", cType)
 					req.SetBody(data)
 				} else {
-					req.SetBodyRaw(r.clientOpt.bodyBytes)
+					bodyBytes := r.clientOpt.bodyBytes
+
+					if *enableGzip {
+						var buf bytes.Buffer
+						zw := gzip.NewWriter(&buf)
+						zw.Write(bodyBytes)
+						zw.Close()
+						if v := buf.Bytes(); len(v) < len(bodyBytes) {
+							bodyBytes = v
+							req.Header.Set("Content-Encoding", "gzip")
+						}
+					}
+
+					req.SetBodyRaw(bodyBytes)
 				}
 				resp.Reset()
 				rr := recordPool.Get().(*ReportRecord)

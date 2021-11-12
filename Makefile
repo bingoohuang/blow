@@ -1,25 +1,14 @@
-.PHONY: default test install
-all: default test install
+.PHONY: test install
+all: test install
 
 app := $(notdir $(shell pwd))
-goVersion := $(shell go version)
-# echo ${goVersion#go version }
-# strip prefix "go version " from output "go version go1.16.7 darwin/amd64"
-goVersion2 := $(subst go version ,,$(goVersion))
-buildTime := $(shell date '+%Y-%m-%d %H:%M:%S')
-gitCommit := $(shell git rev-list -1 HEAD)
-app := $(notdir $(shell pwd))
-goVersion := $(shell go version)
-# echo ${goVersion#go version }
-# strip prefix "go version " from output "go version go1.16.7 darwin/amd64"
-goVersion2 := $(subst go version ,,$(goVersion))
-buildTime := $(shell date '+%Y-%m-%d %H:%M:%S')
-gitCommit := $(shell git rev-list -1 HEAD)
+goVersion := $(shell go version | sed 's/go version //'|sed 's/ /_/')
+buildTime := $(shell date +%FT%T%z)
+gitCommit := $(shell git rev-list --oneline --format=format:'%h@%aI' --max-count=1 `git rev-parse HEAD` | tail -1)
 # https://stackoverflow.com/a/47510909
 pkg := main
-static := -static
 # https://ms2008.github.io/2018/10/08/golang-build-version/
-flags = "-extldflags=$(static) -s -w -X '$(pkg).buildTime=$(buildTime)' -X $(pkg).gitCommit=$(gitCommit) -X '$(pkg).goVersion=$(goVersion2)'"
+flags = "-extldflags=-static -s -w -X '$(pkg).buildTime=$(buildTime)' -X $(pkg).gitCommit=$(gitCommit) -X '$(pkg).goVersion=$(goVersion)'"
 
 tool:
 	go get github.com/securego/gosec/cmd/gosec
@@ -56,7 +45,7 @@ linux: init
 	upx ~/go/bin/linux_amd64/${app}
 	bssh scp ~/go/bin/linux_amd64/${app} r:/usr/local/bin/
 
-linux-arm64: init
+arm: init
 	GOOS=linux GOARCH=arm64 go install -trimpath -ldflags=${flags}  ./...
 	upx ~/go/bin/linux_arm64/${app}
 
