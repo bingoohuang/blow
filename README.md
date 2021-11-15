@@ -11,6 +11,7 @@ net/http due to its lightning fast performance.
 
 Features:
 
+- status by response json fields instead of http status code. e.g. `blow :9335 --status status`.
 - network simulating. e.g. `blow :9335 --network 200K` to simulating bandwidth 200KB/s without latency.
 - network simulating. e.g. `blow :9335 --network 20M:500ms` to simulating bandwidth 20M/s and latency 500ms.
 - uploading files in a dir. e.g. `blow :9335 --upload image-dir -n 1`

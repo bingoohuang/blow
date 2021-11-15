@@ -45,6 +45,7 @@ var (
 	reqWriteTimeout = flag("req-timeout", "Timeout for full request writing").PlaceHolder("DURATION").Duration()
 	rspReadTimeout  = flag("rsp-timeout", "Timeout for full response reading").PlaceHolder("DURATION").Duration()
 	socks5          = flag("socks5", "Socks5 proxy").PlaceHolder("ip:port").String()
+	statusName      = flag("status", "Status name in json, like resultCode").String()
 	autoOpenBrowser = flag("auto-open-browser", "Specify whether auto open browser to show Web charts").Bool()
 
 	urlAddr = kingpin.Arg("url", "request url").String()
@@ -175,7 +176,7 @@ func main() {
 		network:   *network,
 	}
 
-	requester, err := NewRequester(*concurrency, *verbose, *requests, *duration, &clientOpt)
+	requester, err := NewRequester(*concurrency, *verbose, *requests, *duration, &clientOpt, *statusName)
 	if err != nil {
 		errAndExit(err.Error())
 		return

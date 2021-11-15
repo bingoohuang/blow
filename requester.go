@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bingoohuang/jj"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpproxy"
 	"go.uber.org/automaxprocs/maxprocs"
@@ -83,6 +84,7 @@ type Requester struct {
 
 	upload          string
 	uploadFileField string
+	statusName      string
 	noUploadCache   bool
 }
 
@@ -113,7 +115,7 @@ type ClientOpt struct {
 	network   string
 }
 
-func NewRequester(concurrency, verbose int, requests int64, duration time.Duration, clientOpt *ClientOpt) (*Requester, error) {
+func NewRequester(concurrency, verbose int, requests int64, duration time.Duration, clientOpt *ClientOpt, statusName string) (*Requester, error) {
 	maxResult := concurrency * 100
 	if maxResult > 8192 {
 		maxResult = 8192
@@ -126,6 +128,7 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 		recordChan:  make(chan *ReportRecord, maxResult),
 		verbose:     verbose,
 		QPS:         *qps,
+		statusName:  statusName,
 	}
 
 	client, header, err := buildRequestClient(clientOpt, &r.readBytes, &r.writeBytes)
@@ -290,7 +293,7 @@ func (r *Requester) DoRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr 
 		return
 	}
 
-	rr.code = parseCodeNxx(rsp)
+	rr.code = parseCodeNxx(rsp, r.statusName)
 
 	if r.verbose >= 1 {
 		rr.conn = rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()
@@ -321,27 +324,31 @@ func (r *Requester) logDetail(req *fasthttp.Request, rsp *fasthttp.Response, rr 
 	_, _ = r.logf.Write([]byte("\n\n"))
 
 	_, _ = r.logf.Write(rsp.Header.Header())
-	err := rsp.BodyWriteTo(r.logf)
+
+	if string(rsp.Header.Peek("Content-Encoding")) == "gzip" {
+		body, err := rsp.BodyGunzip()
+		if err != nil {
+			return err
+		}
+		r.logf.Write(body)
+	} else {
+		if err := rsp.BodyWriteTo(r.logf); err != nil {
+			return err
+		}
+	}
+
 	_, _ = r.logf.Write([]byte("\n\n"))
 
-	return err
+	return nil
 }
 
-func parseCodeNxx(resp *fasthttp.Response) string {
-	switch resp.StatusCode() / 100 {
-	case 1:
-		return "1xx"
-	case 2:
-		return "2xx"
-	case 3:
-		return "3xx"
-	case 4:
-		return "4xx"
-	case 5:
-		return "5xx"
-	default:
-		return "?xx"
+func parseCodeNxx(resp *fasthttp.Response, statusName string) string {
+	if statusName == "" {
+		statusCode := strconv.Itoa(resp.StatusCode())
+		return statusCode[:1] + "xx"
 	}
+
+	return jj.GetBytes(resp.Body(), statusName).String()
 }
 
 func (r *Requester) Run() {
@@ -382,6 +389,10 @@ func (r *Requester) Run() {
 			if r.httpClient.IsTLS {
 				req.URI().SetScheme("https")
 				req.URI().SetHostBytes(req.Header.Host())
+			}
+
+			if *enableGzip {
+				req.Header.Set("Accept-Encoding", "gzip")
 			}
 
 			throttle := func() {}
