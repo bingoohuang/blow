@@ -179,7 +179,7 @@ type SnapshotHistogram struct {
 type SnapshotReport struct {
 	Elapsed                         time.Duration
 	Codes, Errors                   map[string]int64
-	RPS, RPS2xx                     float64
+	RPS, ElapseInSec                float64
 	ReadThroughput, WriteThroughput float64
 	Count, Connections              int64
 
@@ -213,17 +213,12 @@ func (s *StreamReport) Snapshot() *SnapshotReport {
 	rs.ReadThroughput = float64(s.readBytes) / 1024. / 1024. / elapseInSec
 	rs.WriteThroughput = float64(s.writeBytes) / 1024. / 1024. / elapseInSec
 	rs.Connections = s.totalConns
+	rs.ElapseInSec = elapseInSec
 
 	rs.Codes = make(map[string]int64, len(s.codes))
-	var succ int64
 	for k, v := range s.codes {
 		rs.Codes[k] = v
-
-		if k == "2xx" {
-			succ = v
-		}
 	}
-	rs.RPS2xx = float64(succ) / elapseInSec
 	rs.Errors = make(map[string]int64, len(s.errors))
 	for k, v := range s.errors {
 		rs.Errors[k] = v
