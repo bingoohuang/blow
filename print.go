@@ -291,20 +291,21 @@ func (p *Printer) formatTableReports(w *bytes.Buffer, r *SnapshotReport, isFinal
 	w.WriteString("Summary:\n")
 	report := Report{}
 	writeBulk(w, p.buildSummary(r, isFinal, &report.SummaryReport))
-	w.WriteString("\n")
 
+	w.WriteString("\n")
 	p.printError(w, r)
-
 	writeBulkWith(w, p.buildStats(r, useSeconds, &report.StatsReport), "", "  ", "\n")
-	w.WriteString("\n")
 
+	w.WriteString("\n")
 	w.WriteString("Latency Percentile:\n")
 	report.PercentileReport = make(map[string]string)
 	writeBulk(w, p.buildPercentile(r, useSeconds, report.PercentileReport))
-	w.WriteString("\n")
 
-	w.WriteString("Latency Histogram:\n")
-	writeBulk(w, p.buildHistogram(r, useSeconds, isFinal))
+	if p.verbose >= 1 {
+		w.WriteString("\n")
+		w.WriteString("Latency Histogram:\n")
+		writeBulk(w, p.buildHistogram(r, useSeconds, isFinal))
+	}
 	return report
 }
 

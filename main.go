@@ -209,7 +209,7 @@ func main() {
 			*port = getFreePort(*port)
 		}
 
-		if *port > 0 && *requests != 1 {
+		if *port > 0 && *requests != 1 && *verbose >= 1 {
 			addr := fmt.Sprintf(":%d", *port)
 			if ln, err = net.Listen("tcp", addr); err != nil {
 				errAndExit(err.Error())
