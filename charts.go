@@ -223,6 +223,8 @@ func (c *Charts) Serve(port int) {
 		Handler: cors.DefaultHandler().CorsMiddleware(c.Handler),
 	}
 
+	time.Sleep(3 * time.Second) // 3s之后再弹出，避免运行时间过短，程序已经退出
+
 	go openBrowser(fmt.Sprintf("http://127.0.0.1:%d", port))
 
 	if err := server.Serve(c.ln); err != nil {
