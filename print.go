@@ -132,15 +132,11 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 		stdout.Write(buf.Bytes())
 	}
 
-	t := time.Now().Format(`20060102150405`)
-	if logf == nil {
-		logf, _ = os.CreateTemp(".", "blow_summary_"+t+"_"+"*.log")
+	if logf != nil {
+		logf.WriteString(p.desc + " at " + time.Now().Format(`20060102150405`) + "\n\n")
+		_, _ = logf.Write(buf.Bytes())
+		_ = logf.Close()
 	}
-
-	logf.WriteString(p.desc + " at " + t + "\n\n")
-	_, _ = logf.Write(buf.Bytes())
-
-	_ = logf.Close()
 }
 
 func If(ok bool, a, b string) string {

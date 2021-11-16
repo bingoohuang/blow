@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/alecthomas/kingpin.v3-unstable"
 	"io/ioutil"
 	"net"
 	"net/url"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/alecthomas/kingpin.v3-unstable"
 )
 
 var (
@@ -244,8 +245,7 @@ func createLogFile() *os.File {
 		return nil
 	}
 
-	t := time.Now().Format(`20060102150405`)
-	f, err := os.CreateTemp(".", "blow_detail_"+t+"_"+"*.log")
+	f, err := os.CreateTemp(".", "blow_"+time.Now().Format(`20060102150405`)+"_"+"*.log")
 	if err == nil {
 		fmt.Printf("Log details to: %s\n", f.Name())
 		return f
