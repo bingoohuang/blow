@@ -2,16 +2,17 @@ package main
 
 import (
 	"fmt"
+	"gopkg.in/alecthomas/kingpin.v3-unstable"
 	"io/ioutil"
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
-
-	"gopkg.in/alecthomas/kingpin.v3-unstable"
 )
 
 var (
@@ -215,6 +216,7 @@ func main() {
 				errAndExit(err.Error())
 			}
 			fmt.Printf("@ Real-time charts is listening on http://%s\n", ln.Addr().String())
+			open("http://127.0.0.1" + addr)
 		}
 		fmt.Printf("\n")
 	}
@@ -238,6 +240,25 @@ func main() {
 	// terminal printer
 	p := &Printer{maxNum: *requests, maxDuration: *duration, verbose: *verbose, desc: desc, upload: requester.upload}
 	p.PrintLoop(report.Snapshot, 200*time.Millisecond, false, onlyResultJson, report.Done(), *requests, logf)
+}
+
+// open opens the specified URL in the default browser of the user.
+// from https://stackoverflow.com/questions/39320371/how-start-web-server-to-open-page-in-browser-in-golang.
+func open(url string) error {
+	var cmd string
+	var args []string
+
+	switch runtime.GOOS {
+	case "windows":
+		cmd = "cmd"
+		args = []string{"/c", "start"}
+	case "darwin":
+		cmd = "open"
+	default: // "linux", "freebsd", "openbsd", "netbsd"
+		cmd = "xdg-open"
+	}
+	args = append(args, url)
+	return exec.Command(cmd, args...).Start()
 }
 
 func createLogFile() *os.File {
