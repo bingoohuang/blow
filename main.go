@@ -7,9 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +45,6 @@ var (
 	rspReadTimeout  = flag("rsp-timeout", "Timeout for full response reading").PlaceHolder("DURATION").Duration()
 	socks5          = flag("socks5", "Socks5 proxy").PlaceHolder("ip:port").String()
 	statusName      = flag("status", "Status name in json, like resultCode").String()
-	autoOpenBrowser = flag("auto-open-browser", "Specify whether auto open browser to show Web charts").Bool()
 
 	urlAddr = kingpin.Arg("url", "request url").String()
 )
@@ -216,7 +213,6 @@ func main() {
 				errAndExit(err.Error())
 			}
 			fmt.Printf("@ Real-time charts is listening on http://%s\n", ln.Addr().String())
-			open("http://127.0.0.1" + addr)
 		}
 		fmt.Printf("\n")
 	}
@@ -234,31 +230,13 @@ func main() {
 		if err != nil {
 			errAndExit(err.Error())
 		}
-		go charts.Serve(*autoOpenBrowser)
+
+		go charts.Serve(*port)
 	}
 
 	// terminal printer
 	p := &Printer{maxNum: *requests, maxDuration: *duration, verbose: *verbose, desc: desc, upload: requester.upload}
 	p.PrintLoop(report.Snapshot, 200*time.Millisecond, false, onlyResultJson, report.Done(), *requests, logf)
-}
-
-// open opens the specified URL in the default browser of the user.
-// from https://stackoverflow.com/questions/39320371/how-start-web-server-to-open-page-in-browser-in-golang.
-func open(url string) error {
-	var cmd string
-	var args []string
-
-	switch runtime.GOOS {
-	case "windows":
-		cmd = "cmd"
-		args = []string{"/c", "start"}
-	case "darwin":
-		cmd = "open"
-	default: // "linux", "freebsd", "openbsd", "netbsd"
-		cmd = "xdg-open"
-	}
-	args = append(args, url)
-	return exec.Command(cmd, args...).Start()
 }
 
 func createLogFile() *os.File {
