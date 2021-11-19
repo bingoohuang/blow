@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/alecthomas/kingpin.v3-unstable"
 	"io/ioutil"
 	"net"
 	"net/url"
@@ -11,6 +10,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bingoohuang/gg/pkg/thinktime"
+
+	"gopkg.in/alecthomas/kingpin.v3-unstable"
 )
 
 var (
@@ -141,7 +144,7 @@ func main() {
 	}
 
 	logf := createLogFile()
-	think, err := ParseThinkTime(*thinkTime)
+	think, err := thinktime.ParseThinkTime(*thinkTime)
 	if err != nil {
 		errAndExit(err.Error())
 	}

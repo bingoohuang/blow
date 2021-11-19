@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/bingoohuang/blow/lossy"
 	"net"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/bingoohuang/blow/lossy"
 
 	"github.com/dustin/go-humanize"
 	"github.com/valyala/fasthttp"

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
 	"log"
 	"mime/multipart"
@@ -14,7 +16,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 )
 
-func dealUploadFilePath(uploadFilepath string, postFileCh chan string) {
+func dealUploadFilePath(ctx context.Context, uploadFilepath string, postFileCh chan string) {
 	if uploadFilepath == "" {
 		return
 	}
@@ -31,10 +33,17 @@ func dealUploadFilePath(uploadFilepath string, postFileCh chan string) {
 	defer close(postFileCh)
 
 	if !fs.IsDir() {
-		postFileCh <- uploadFilepath
-		return
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				postFileCh <- uploadFilepath
+			}
+		}
 	}
 
+	errStop := fmt.Errorf("canceled")
 	fn := func(osPathname string, directoryEntry *godirwalk.Dirent) error {
 		if v, e := directoryEntry.IsDirOrSymlinkToDir(); v || e != nil {
 			return e
@@ -45,11 +54,22 @@ func dealUploadFilePath(uploadFilepath string, postFileCh chan string) {
 		}
 
 		postFileCh <- osPathname
+		select {
+		case <-ctx.Done():
+			return errStop
+		default:
+			postFileCh <- osPathname
+		}
+
 		return nil
 	}
 	options := godirwalk.Options{Unsorted: true, Callback: fn}
-	if err := godirwalk.Walk(uploadFilepath, &options); err != nil {
-		log.Printf("walk dir: %s error: %v", uploadFilepath, err)
+
+	for {
+		if err := godirwalk.Walk(uploadFilepath, &options); err != nil {
+			log.Printf("walk dir: %s error: %v", uploadFilepath, err)
+			return
+		}
 	}
 }
 

@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/AdhityaRamadhanus/fasthttpcors v0.0.0-20170121111917-d4c07198763a
 	github.com/beorn7/perks v1.0.1
+	github.com/bingoohuang/gg v0.0.0-20211112132045-1f18ede092bb
 	github.com/bingoohuang/jj v0.0.0-20211112140655-43116361f931
 	github.com/dustin/go-humanize v1.0.0
 	github.com/go-echarts/go-echarts/v2 v2.2.4
@@ -21,7 +22,6 @@ require (
 	github.com/BurntSushi/toml v0.4.1 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a // indirect
 	github.com/andybalholm/brotli v1.0.2 // indirect
-	github.com/bingoohuang/gg v0.0.0-20211112132045-1f18ede092bb // indirect
 	github.com/klauspost/compress v1.13.4 // indirect
 	github.com/nicksnyder/go-i18n v1.10.1 // indirect
 	github.com/pbnjay/pixfont v0.0.0-20200714042608-33b744692567 // indirect

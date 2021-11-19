@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bingoohuang/gg/pkg/thinktime"
+
 	"github.com/bingoohuang/jj"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpproxy"
@@ -76,7 +78,7 @@ type Requester struct {
 	logf       *os.File
 
 	cancel   func()
-	think    *ThinkTime
+	think    *thinktime.ThinkTime
 	logfLock *sync.Mutex
 
 	// Qps is the rate limit in queries per second.
@@ -86,6 +88,7 @@ type Requester struct {
 	uploadFileField string
 	statusName      string
 	noUploadCache   bool
+	ctx             context.Context
 }
 
 type ClientOpt struct {
@@ -120,6 +123,9 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 	if maxResult > 8192 {
 		maxResult = 8192
 	}
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
 	r := &Requester{
 		concurrency: concurrency,
 		requests:    requests,
@@ -129,6 +135,8 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 		verbose:     verbose,
 		QPS:         *qps,
 		statusName:  statusName,
+		ctx:         ctx,
+		cancel:      cancelFunc,
 	}
 
 	client, header, err := buildRequestClient(clientOpt, &r.readBytes, &r.writeBytes)
@@ -156,7 +164,7 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 
 	if r.upload != "" {
 		r.uploadChan = make(chan string, 1)
-		go dealUploadFilePath(r.upload, r.uploadChan)
+		go dealUploadFilePath(ctx, r.upload, r.uploadChan)
 	}
 
 	return r, nil
@@ -357,18 +365,16 @@ func (r *Requester) Run() {
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigs)
 
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	r.cancel = cancelFunc
 	go func() {
 		<-sigs
 		r.closeRecord()
-		cancelFunc()
+		r.cancel()
 	}()
 	startTime = time.Now()
 	if r.duration > 0 {
 		time.AfterFunc(r.duration, func() {
 			r.closeRecord()
-			cancelFunc()
+			r.cancel()
 		})
 	}
 
@@ -403,13 +409,13 @@ func (r *Requester) Run() {
 
 			for {
 				select {
-				case <-ctx.Done():
+				case <-r.ctx.Done():
 					return
 				default:
 				}
 
 				if r.requests > 0 && atomic.AddInt64(&semaphore, -1) < 0 {
-					cancelFunc()
+					r.cancel()
 					return
 				}
 
