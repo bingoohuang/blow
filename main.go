@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/alecthomas/kingpin.v3-unstable"
 	"io/ioutil"
 	"net"
 	"net/url"
@@ -12,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bingoohuang/gg/pkg/thinktime"
-
 	"gopkg.in/alecthomas/kingpin.v3-unstable"
+
+	"github.com/bingoohuang/gg/pkg/thinktime"
 )
 
 var (
