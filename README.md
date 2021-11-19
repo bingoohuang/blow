@@ -11,16 +11,19 @@ net/http due to its lightning fast performance.
 
 Features:
 
-- status by response json fields instead of http status code. e.g. `blow :9335 --status status`.
-- network simulating. e.g. `blow :9335 --network 200K` to simulating bandwidth 200KB/s without latency.
-- network simulating. e.g. `blow :9335 --network 20M:500ms` to simulating bandwidth 20M/s and latency 500ms.
-- uploading files in a dir. e.g. `blow :9335 --upload image-dir -n 1`
-- uploading single file. e.g. `blow :9335 --upload 1.jpg -n 1`
-- uploading big files without cache. e.g. `blow :9335 --upload .:nocache --user scott:tiger -n 1`
-- basic auth. e.g. `blow :9335 --user username:password`
-- thinking time among requests. e.g. `blow :8080 --think 100ms`, `blow :8080 --think 100-300ms`
-- QPS to limit requests per second and per worker. e.g. `blow :8080 --qps 1000`
-- help `blow --help`
+1. test with detail request and response printing by `-n1`
+1. enable web service by `-v`
+1. enable logging for requests and responses details by `-vv`
+1. status by response json fields instead of http status code. e.g. `blow :9335 --status status`.
+1. network simulating. e.g. `blow :9335 --network 200K` to simulating bandwidth 200KB/s without latency.
+1. network simulating. e.g. `blow :9335 --network 20M:500ms` to simulating bandwidth 20M/s and latency 500ms.
+1. uploading files in a dir. e.g. `blow :9335 --upload image-dir -n1`
+1. uploading single file. e.g. `blow :9335 --upload 1.jpg -n1`
+1. uploading big files without cache. e.g. `blow :9335 --upload .:nocache --user scott:tiger -n1`
+1. basic auth. e.g. `blow :9335 --user username:password`
+1. thinking time among requests. e.g. `blow :8080 --think 100ms`, `blow :8080 --think 100-300ms`
+1. QPS to limit requests per second and per worker. e.g. `blow :8080 --qps 1000`
+1. help `blow --help`
 
 Blow runs at a specified connections(option `-c`) concurrently and **real-time** records a summary statistics, histogram
 of execution time and calculates percentiles to display on Web UI and terminal. It can run for a set duration(
@@ -33,7 +36,7 @@ additional performance overhead for benchmarking.
 ![](https://github.com/bingoohuang/blow/blob/main/demo.gif?raw=true)
 
 ```text
-❯ ./blow http://127.0.0.1:8080/hello -c 20
+❯ ./blow 8080/hello -c20
 Benchmarking http://127.0.0.1:8080/hello using 20 connection(s).
 @ Real-time charts is listening on http://[::]:18888
 
@@ -65,90 +68,68 @@ Latency Histogram:
   524µs       3
 ```
 
-- [Installation](#installation)
-    - [Via Go](#via-go)
-    - [Via Homebrew](#via-homebrew)
-    - [Via Docker](#via-docker)
-- [Usage](#usage)
-    - [Options](#options)
-    - [Examples](#examples)
-- [Stargazers](#Stargazers)
-- [License](#license)
-
 ## Installation
 
-```bash
-go get -u github.com/bingoohuang/blow
-```
+`go install github.com/bingoohuang/blow`
 
 ## Usage
 
 ### Options
 
 ```bash
-usage: blow [<flags>] <url>
+🕙[2021-11-16 22:07:50.899] ❯ blow --help
+usage: blow [<flags>] [<url>]
 
 A high-performance HTTP benchmarking tool with real-time web UI and terminal displaying
 
 Examples:
 
-  blow http://127.0.0.1:8080/ -c 20 -n 100000
-  blow https://httpbin.org/post -c 20 -d 5m -b @file.json
+  blow :18888/api/hello
+  blow http://127.0.0.1:8080/ -c20 -n100000
+  blow https://httpbin.org/post -c20 -d5m --body @file.json -T 'application/json' -m POST
 
 Flags:
       --help                   Show context-sensitive help.
-  -c, --concurrency=1          Number of connections to run concurrently
-  -n, --requests=-1            Number of requests to run
-  -d, --duration=DURATION      Duration of test, examples: -d 10s -d 3m
-  -i, --interval=200ms         Print snapshot result every interval, use 0 to print once at the end
-      --seconds                Use seconds as time unit to print
-  -b, --body=BODY              HTTP request body, if start the body with @, the rest should be a filename to read
+  -c, --concurrency=100        #connections to run concurrently
+  -n, --requests=-1            #requests to run
+  -d, --duration=DURATION      Duration of test, examples: -d10s -d3m
+  -v, --verbose ...            v: Show connections in summary. vv: Log requests and response details to file
+      --think=DURATION         Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)
+  -b, --body=BODY              HTTP request body, or @file to read from
+  -u, --upload=UPLOAD          HTTP upload multipart form file or directory, or add prefix file: to set form field name
+  -q, --qps=QPS                Rate limit, in queries per second per worker. Default is no rate limit
       --stream                 Specify whether to stream file specified by '--body @file' using chunked encoding or to read into memory
-  -m, --method="GET"           HTTP method
+  -m, --method=METHOD          HTTP method
+      --network=NETWORK        Network simulation, local: simulates local network, lan: local, wan: wide, bad: bad network, or BPS:latency like 20M:20ms
   -H, --header=K:V ...         Custom HTTP headers
       --host=HOST              Host header
+      --gzip                   Enabled gzip if gzipped content is less more
+      --user=USER              basic auth username:password
   -T, --content=CONTENT        Content-Type header
       --cert=CERT              Path to the client's TLS Certificate
       --key=KEY                Path to the client's TLS Certificate Private Key
   -k, --insecure               Controls whether a client verifies the server's certificate chain and host name
-      --listen=":18888"        Listen addr to serve Web UI
+      --report=REPORT          How to report, dynamic (default) / json
+      --port=18888             Listen port for serve Web UI
       --timeout=DURATION       Timeout for each http request
       --dial-timeout=DURATION  Timeout for dial addr
       --req-timeout=DURATION   Timeout for full request writing
-      --resp-timeout=DURATION  Timeout for full response reading
+      --rsp-timeout=DURATION   Timeout for full response reading
       --socks5=ip:port         Socks5 proxy
-      --auto-open-browser      Specify whether auto open browser to show Web charts
+      --status=STATUS          Status name in json, like resultCode
       --version                Show application version.
 
-  Flags default values also read from env PLOW_SOME_FLAG, such as PLOW_TIMEOUT=5s equals to --timeout=5s
+  Flags default values also read from env BLOW_SOME_FLAG, such as BLOW_TIMEOUT=5s equals to --timeout=5s
 
 Args:
-  <url>  request url
+  [<url>]  request url
 ```
 
 ### Examples
 
-Basic usage:
-
-```bash
-plow http://127.0.0.1:8080/ -c 20 -n 10000 -d 10s
-```
-
-POST a json file:
-
-```bash
-plow https://httpbin.org/post -c 20 --body @file.json -T 'application/json' -m POST
-```
-
-### Bash/ZSH Shell Completion
-
-```bash
-# Add the statement to their bash_profile (or equivalent):
-eval "$(plow --completion-script-bash)"
-# Or for ZSH
-eval "$(plow --completion-script-zsh)"
-```
+1. Basic usage: `blow http://127.0.0.1:8080/ -c20 -n10000 -d10s`
+2. POST a json file:  `blow https://httpbin.org/post -c20 --body @file.json -T 'application/json' -m POST`
 
 ## License
 
-See [LICENSE](https://github.com/six-ddc/plow/blob/master/LICENSE).
+See [LICENSE](https://github.com/bingoohuang/blow/blob/master/LICENSE).
