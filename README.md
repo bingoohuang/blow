@@ -11,19 +11,20 @@ net/http due to its lightning fast performance.
 
 Features:
 
-1. test with detail request and response printing by `-n1`
-1. enable web service by `-v`
-1. enable logging for requests and responses details by `-vv`
-1. status by response json fields instead of http status code. e.g. `blow :9335 --status status`.
-1. network simulating. e.g. `blow :9335 --network 200K` to simulating bandwidth 200KB/s without latency.
-1. network simulating. e.g. `blow :9335 --network 20M:500ms` to simulating bandwidth 20M/s and latency 500ms.
-1. uploading files in a dir. e.g. `blow :9335 --upload image-dir -n1`
-1. uploading single file. e.g. `blow :9335 --upload 1.jpg -n1`
-1. uploading big files without cache. e.g. `blow :9335 --upload .:nocache --user scott:tiger -n1`
-1. basic auth. e.g. `blow :9335 --user username:password`
-1. thinking time among requests. e.g. `blow :8080 --think 100ms`, `blow :8080 --think 100-300ms`
-1. QPS to limit requests per second and per worker. e.g. `blow :8080 --qps 1000`
-1. help `blow --help`
+1. TODO: support [hurl format](https://github.com/Orange-OpenSource/hurl)
+2. test with detail request and response printing by `-n1`
+3. enable web service by `-v`
+4. enable logging for requests and responses details by `-vv`
+5. status by response json fields instead of http status code. e.g. `blow :9335 --status status`.
+6. network simulating. e.g. `blow :9335 --network 200K` to simulating bandwidth 200KB/s without latency.
+7. network simulating. e.g. `blow :9335 --network 20M:500ms` to simulating bandwidth 20M/s and latency 500ms.
+8. uploading files in a dir. e.g. `blow :9335 --upload image-dir -n1`
+9. uploading single file. e.g. `blow :9335 --upload 1.jpg -n1`
+10. uploading big files without cache. e.g. `blow :9335 --upload .:nocache --user scott:tiger -n1`
+11. basic auth. e.g. `blow :9335 --user username:password`
+12. thinking time among requests. e.g. `blow :8080 --think 100ms`, `blow :8080 --think 100-300ms`
+13. QPS to limit requests per second and per worker. e.g. `blow :8080 --qps 1000`
+14. help `blow --help`
 
 Blow runs at a specified connections(option `-c`) concurrently and **real-time** records a summary statistics, histogram
 of execution time and calculates percentiles to display on Web UI and terminal. It can run for a set duration(
