@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net"
-	"net/url"
 	"os"
-	"regexp"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/bingoohuang/blow/profile"
+	"github.com/bingoohuang/blow/util"
+	"github.com/bingoohuang/gg/pkg/filex"
+	"github.com/bingoohuang/gg/pkg/ss"
 
 	"gopkg.in/alecthomas/kingpin.v3-unstable"
 
@@ -32,6 +33,7 @@ var (
 	method      = flag("method", "HTTP method").Short('m').String()
 	network     = flag("network", "Network simulation, local: simulates local network, lan: local, wan: wide, bad: bad network, or BPS:latency like 20M:20ms").String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
+	profileArg  = flag("profile", "Profile file, append :new to create a demo profile").Short('P').Strings()
 	host        = flag("host", "Host header").String()
 	enableGzip  = flag("gzip", "Enabled gzip if gzipped content is less more").Bool()
 	basicAuth   = flag("user", "basic auth username:password").String()
@@ -51,11 +53,6 @@ var (
 
 	urlAddr = kingpin.Arg("url", "request url").String()
 )
-
-func errAndExit(msg string) {
-	fmt.Fprintln(os.Stderr, "blow: "+msg)
-	os.Exit(1)
-}
 
 var CompactUsageTemplate = `{{define "FormatCommand" -}}
 {{if .FlagSummary}} {{.FlagSummary}}{{end -}}
@@ -121,12 +118,12 @@ func main() {
 	kingpin.Parse()
 
 	if *urlAddr != "" {
-		if v, err := FixURI(*urlAddr); err != nil {
-			errAndExit(err.Error())
+		if v, err := util.FixURI(*urlAddr); err != nil {
+			util.Exit(err.Error())
 		} else {
 			*urlAddr = v
 		}
-	} else {
+	} else if len(*profileArg) == 0 {
 		*requests = 0
 	}
 
@@ -143,13 +140,12 @@ func main() {
 		*key = ""
 	}
 
-	logf := createLogFile()
 	think, err := thinktime.ParseThinkTime(*thinkTime)
 	if err != nil {
-		errAndExit(err.Error())
+		util.Exit(err.Error())
 	}
 
-	bodyFile, bodyBytes := parseBodyArg()
+	bodyFile, bodyBytes := util.ParseBodyArg(*body, *stream)
 
 	clientOpt := ClientOpt{
 		url:       *urlAddr,
@@ -157,6 +153,7 @@ func main() {
 		headers:   *headers,
 		bodyBytes: bodyBytes,
 		bodyFile:  bodyFile,
+		upload:    *upload,
 
 		certPath: *cert,
 		keyPath:  *key,
@@ -172,26 +169,23 @@ func main() {
 		contentType: *contentType,
 		host:        *host,
 
-		upload:    *upload,
 		basicAuth: *basicAuth,
 		network:   *network,
 	}
 
-	requester, err := NewRequester(*concurrency, *verbose, *requests, *duration, &clientOpt, *statusName)
+	profiles := parseProfileArg(*profileArg)
+
+	requester, err := NewRequester(*concurrency, *verbose, *requests, *duration, &clientOpt, *statusName, profiles)
 	if err != nil {
-		errAndExit(err.Error())
-		return
+		util.Exit(err.Error())
 	}
 
-	requester.logf = logf
-	if logf != nil {
-		requester.logfLock = &sync.Mutex{}
-	}
+	requester.logf = util.CreateLogFile(*verbose)
 	requester.think = think
 
 	var ln net.Listener
 	// description
-	desc := fmt.Sprintf("Benchmarking %s", *urlAddr)
+	desc := fmt.Sprintf("Benchmarking %s", ss.Or(*urlAddr, "profiles"))
 	if *requests > 0 {
 		desc += fmt.Sprintf(" with %d request(s)", *requests)
 	}
@@ -201,19 +195,18 @@ func main() {
 	desc += fmt.Sprintf(" using %d connection(s).", *concurrency)
 
 	onlyResultJson := *reportType == "json"
-
 	if !onlyResultJson {
 		fmt.Println(desc)
 
 		// charts listener
 		if *port > 0 && *requests != 1 {
-			*port = getFreePort(*port)
+			*port = util.GetFreePortStart(*port)
 		}
 
 		if *port > 0 && *requests != 1 && *verbose >= 1 {
 			addr := fmt.Sprintf(":%d", *port)
 			if ln, err = net.Listen("tcp", addr); err != nil {
-				errAndExit(err.Error())
+				util.Exit(err.Error())
 			}
 			fmt.Printf("@ Real-time charts is listening on http://%s\n", ln.Addr().String())
 		}
@@ -231,7 +224,7 @@ func main() {
 		// serve charts data
 		charts, err := NewCharts(ln, report.Charts, desc)
 		if err != nil {
-			errAndExit(err.Error())
+			util.Exit(err.Error())
 		}
 
 		go charts.Serve(*port)
@@ -239,112 +232,34 @@ func main() {
 
 	// terminal printer
 	p := &Printer{maxNum: *requests, maxDuration: *duration, verbose: *verbose, desc: desc, upload: requester.upload}
-	p.PrintLoop(report.Snapshot, 200*time.Millisecond, false, onlyResultJson, report.Done(), *requests, logf)
+	p.PrintLoop(report.Snapshot, 200*time.Millisecond, false, onlyResultJson, report.Done(), *requests, requester.logf)
 }
 
-func createLogFile() *os.File {
-	if *verbose < 2 {
-		return nil
-	}
-
-	f, err := os.CreateTemp(".", "blow_"+time.Now().Format(`20060102150405`)+"_"+"*.log")
-	if err == nil {
-		fmt.Printf("Log details to: %s\n", f.Name())
-		return f
-	}
-
-	errAndExit(err.Error())
-	return nil
-}
-
-func getFreePort(port int) int {
-	for i := 0; i < 100; i++ {
-		if IsPortFree(port) {
-			return port
-		}
-		port++
-	}
-
-	return 0
-}
-
-func parseBodyArg() (bodyFile string, bodyBytes []byte) {
-	if strings.HasPrefix(*body, "@") {
-		fileName := (*body)[1:]
-		if _, err := os.Stat(fileName); err != nil {
-			errAndExit(err.Error())
-		}
-		if *stream {
-			return fileName, nil
+func parseProfileArg(profileArg []string) []*profile.Profile {
+	var profiles []*profile.Profile
+	hasNew := false
+	for _, p := range profileArg {
+		if strings.HasSuffix(p, ":new") {
+			name := p[:len(p)-4]
+			util.ExitIfErr(os.WriteFile(name, []byte(profile.DemoProfile), os.ModePerm))
+			fmt.Printf("profile file %s created\n", name)
+			hasNew = true
+			continue
 		}
 
-		data, err := ioutil.ReadFile(fileName)
+		if !filex.Exists(p) {
+			util.Exit("profile " + p + " doesn't exist")
+		}
+
+		pp, err := profile.ParseProfileFile("", p)
 		if err != nil {
-			errAndExit(err.Error())
+			util.Exit(err.Error())
 		}
-		return "", data
+
+		profiles = append(profiles, pp...)
 	}
-
-	if *body != "" {
-		if _, err := os.Stat(*body); err == nil {
-			fileName := *body
-			if *stream {
-				return fileName, nil
-			}
-
-			if data, err := ioutil.ReadFile(fileName); err == nil {
-				return "", data
-			}
-		}
+	if hasNew {
+		os.Exit(0)
 	}
-
-	return "", []byte(*body)
-}
-
-// IsPortFree tells whether the port is free or not
-func IsPortFree(port int) bool {
-	l, err := ListenPort(port)
-	if err != nil {
-		return false
-	}
-
-	_ = l.Close()
-	return true
-}
-
-// ListenPort listens on port
-func ListenPort(port int) (net.Listener, error) {
-	return net.Listen("tcp", fmt.Sprintf(":%d", port))
-}
-
-var reScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+-.]*://`)
-
-const defaultScheme, defaultHost = "http", "127.0.0.1"
-
-func FixURI(uri string) (string, error) {
-	if uri == ":" {
-		uri = ":80"
-	}
-
-	// ex) :8080/hello or /hello or :
-	if strings.HasPrefix(uri, ":") || strings.HasPrefix(uri, "/") {
-		uri = defaultHost + uri
-	}
-
-	// ex) example.com/hello
-	if !reScheme.MatchString(uri) {
-		uri = defaultScheme + "://" + uri
-	}
-
-	u, err := url.Parse(uri)
-	if err != nil {
-		return "", err
-	}
-
-	u.Host = strings.TrimSuffix(u.Host, ":")
-	if u.Path == "" {
-		u.Path = "/"
-	}
-
-	return u.String(), nil
+	return profiles
 }

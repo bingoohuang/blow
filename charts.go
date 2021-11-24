@@ -14,6 +14,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/bingoohuang/blow/util"
+
 	_ "embed"
 
 	cors "github.com/AdhityaRamadhanus/fasthttpcors"
@@ -227,9 +229,8 @@ func (c *Charts) Serve(port int) {
 
 	go openBrowser(fmt.Sprintf("http://127.0.0.1:%d", port))
 
-	if err := server.Serve(c.ln); err != nil {
-		errAndExit(err.Error())
-	}
+	err := server.Serve(c.ln)
+	util.ExitIfErr(err)
 }
 
 // openBrowser go/src/cmd/internal/browser/browser.go

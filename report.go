@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/bingoohuang/blow/util"
 	"math"
 	"sync"
 	"time"
@@ -9,7 +10,26 @@ import (
 	"github.com/beorn7/perks/quantile"
 )
 
+type ReportRecord struct {
+	cost       time.Duration
+	code       []string
+	error      string
+	conn       []string
+	readBytes  int64
+	writeBytes int64
+}
+
+func (r ReportRecord) Reset() {
+	r.cost = 0
+	r.code = nil
+	r.conn = nil
+	r.error = ""
+	r.readBytes = 0
+	r.writeBytes = 0
+}
+
 var (
+	recordPool      = sync.Pool{New: func() interface{} { return new(ReportRecord) }}
 	quantiles       = []float64{0.50, 0.75, 0.90, 0.95, 0.99, 0.999, 0.9999}
 	quantilesTarget = map[float64]float64{0.50: 0.01, 0.75: 0.01, 0.90: 0.001, 0.95: 0.001, 0.99: 0.001, 0.999: 0.0001, 0.9999: 0.00001}
 )
@@ -139,18 +159,21 @@ func (s *StreamReport) Collect(records <-chan *ReportRecord) {
 		s.lock.Lock()
 		latencyWithinSecTemp.Update(float64(r.cost))
 		s.insert(float64(r.cost))
-		if r.code != "" {
-			s.codes[r.code]++
+		if len(r.code) > 0 {
+			codes := util.MergeCodes(r.code)
+			r.code = nil
+			s.codes[codes]++
 		}
 		if r.error != "" {
 			s.errors[r.error]++
 		}
-		if r.conn != "" {
-			if _, ok := s.conns[r.conn]; !ok {
+		for _, conn := range r.conn {
+			if _, ok := s.conns[conn]; !ok {
 				s.totalConns++
-				s.conns[r.conn] = struct{}{}
+				s.conns[conn] = struct{}{}
 			}
 		}
+		r.conn = nil
 		s.readBytes = r.readBytes
 		s.writeBytes = r.writeBytes
 		s.lock.Unlock()

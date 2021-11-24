@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 )
 
-func dealUploadFilePath(ctx context.Context, uploadFilepath string, postFileCh chan string) {
+func DealUploadFilePath(ctx context.Context, uploadFilepath string, postFileCh chan string) {
 	if uploadFilepath == "" {
 		return
 	}
@@ -80,9 +80,9 @@ type cacheItem struct {
 	contentType string
 }
 
-// readMultipartFile read file filePath for upload in multipart,
+// ReadMultipartFile read file filePath for upload in multipart,
 // return multipart content, form data content type and error.
-func readMultipartFile(nocache bool, fieldName, filePath string) (data []byte, contentType string, err error) {
+func ReadMultipartFile(nocache bool, fieldName, filePath string) (data []byte, contentType string, err error) {
 	if !nocache {
 		if load, ok := filePathCache.Load(filePath); ok {
 			item := load.(cacheItem)

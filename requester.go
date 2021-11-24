@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/url"
@@ -20,6 +21,9 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/bingoohuang/blow/profile"
+	"github.com/bingoohuang/blow/util"
 
 	"github.com/bingoohuang/gg/pkg/thinktime"
 
@@ -33,17 +37,6 @@ var (
 	startTime        = time.Now()
 	sendOnCloseError interface{}
 )
-
-type ReportRecord struct {
-	cost       time.Duration
-	code       string
-	error      string
-	conn       string
-	readBytes  int64
-	writeBytes int64
-}
-
-var recordPool = sync.Pool{New: func() interface{} { return new(ReportRecord) }}
 
 func init() {
 	// Honoring env GOMAXPROCS
@@ -75,11 +68,11 @@ type Requester struct {
 
 	readBytes  int64
 	writeBytes int64
-	logf       *os.File
 
-	cancel   func()
-	think    *thinktime.ThinkTime
-	logfLock *sync.Mutex
+	logf *util.LogFile
+
+	cancel func()
+	think  *thinktime.ThinkTime
 
 	// Qps is the rate limit in queries per second.
 	QPS float64
@@ -89,6 +82,9 @@ type Requester struct {
 	statusName      string
 	noUploadCache   bool
 	ctx             context.Context
+
+	httpClientDo func(*fasthttp.Request, *fasthttp.Response) error
+	profiles     []*profile.Profile
 }
 
 type ClientOpt struct {
@@ -118,7 +114,8 @@ type ClientOpt struct {
 	network   string
 }
 
-func NewRequester(concurrency, verbose int, requests int64, duration time.Duration, clientOpt *ClientOpt, statusName string) (*Requester, error) {
+func NewRequester(concurrency, verbose int, requests int64, duration time.Duration, clientOpt *ClientOpt,
+	statusName string, profiles []*profile.Profile) (*Requester, error) {
 	maxResult := concurrency * 100
 	if maxResult > 8192 {
 		maxResult = 8192
@@ -137,9 +134,10 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 		statusName:  statusName,
 		ctx:         ctx,
 		cancel:      cancelFunc,
+		profiles:    profiles,
 	}
 
-	client, header, err := buildRequestClient(clientOpt, &r.readBytes, &r.writeBytes)
+	client, header, err := r.buildRequestClient(clientOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -164,21 +162,25 @@ func NewRequester(concurrency, verbose int, requests int64, duration time.Durati
 
 	if r.upload != "" {
 		r.uploadChan = make(chan string, 1)
-		go dealUploadFilePath(ctx, r.upload, r.uploadChan)
+		go util.DealUploadFilePath(ctx, r.upload, r.uploadChan)
 	}
 
 	return r, nil
 }
 
 func addMissingPort(addr string, isTLS bool) string {
+	if addr == "" {
+		return ""
+	}
+
 	if n := strings.Index(addr, ":"); n >= 0 {
 		return addr
 	}
-	port := 80
+	p := 80
 	if isTLS {
-		port = 443
+		p = 443
 	}
-	return net.JoinHostPort(addr, strconv.Itoa(port))
+	return net.JoinHostPort(addr, strconv.Itoa(p))
 }
 
 func buildTLSConfig(opt *ClientOpt) (*tls.Config, error) {
@@ -196,11 +198,20 @@ func buildTLSConfig(opt *ClientOpt) (*tls.Config, error) {
 	}, nil
 }
 
-func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fasthttp.RequestHeader, error) {
-	u, err := url.Parse(opt.url)
+func (r *Requester) buildRequestClient(opt *ClientOpt) (*fasthttp.HostClient, *fasthttp.RequestHeader, error) {
+	var u *url.URL
+	var err error
+
+	if opt.url != "" {
+		u, err = url.Parse(opt.url)
+	} else if len(r.profiles) > 0 {
+		u, err = url.Parse(r.profiles[0].URL)
+	}
+
 	if err != nil {
 		return nil, nil, err
 	}
+
 	httpClient := &fasthttp.HostClient{
 		Addr:         addMissingPort(u.Host, u.Scheme == "https"),
 		IsTLS:        u.Scheme == "https",
@@ -220,7 +231,7 @@ func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fas
 		httpClient.Dial = fasthttpproxy.FasthttpProxyHTTPDialerTimeout(opt.dialTimeout)
 	}
 
-	httpClient.Dial = ThroughputStatDial(networkWrap(opt.network), httpClient.Dial, r, w)
+	httpClient.Dial = ThroughputStatDial(networkWrap(opt.network), httpClient.Dial, &r.readBytes, &r.writeBytes)
 
 	tlsConfig, err := buildTLSConfig(opt)
 	if err != nil {
@@ -228,29 +239,29 @@ func buildRequestClient(opt *ClientOpt, r, w *int64) (*fasthttp.HostClient, *fas
 	}
 	httpClient.TLSConfig = tlsConfig
 
-	var requestHeader fasthttp.RequestHeader
-	requestHeader.SetContentType(adjustContentType(opt))
+	var h fasthttp.RequestHeader
+	h.SetContentType(adjustContentType(opt))
 	if opt.host != "" {
-		requestHeader.SetHost(opt.host)
+		h.SetHost(opt.host)
 	} else {
-		requestHeader.SetHost(u.Host)
+		h.SetHost(u.Host)
 	}
 
-	requestHeader.SetMethod(adjustMethod(opt))
-	requestHeader.SetRequestURI(u.RequestURI())
-	for _, h := range opt.headers {
-		n := strings.SplitN(h, ":", 2)
+	h.SetMethod(adjustMethod(opt))
+	h.SetRequestURI(u.RequestURI())
+	for _, v := range opt.headers {
+		n := strings.SplitN(v, ":", 2)
 		if len(n) != 2 {
-			return nil, nil, fmt.Errorf("invalid header: %s", h)
+			return nil, nil, fmt.Errorf("invalid header: %s", v)
 		}
-		requestHeader.Set(n[0], n[1])
+		h.Set(n[0], n[1])
 	}
 
 	if opt.basicAuth != "" {
-		requestHeader.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(opt.basicAuth)))
+		h.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(opt.basicAuth)))
 	}
 
-	return httpClient, &requestHeader, nil
+	return httpClient, &h, nil
 }
 
 func adjustContentType(opt *ClientOpt) string {
@@ -285,75 +296,59 @@ func (r *Requester) closeRecord() {
 	})
 }
 
-func (r *Requester) DoRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) {
+func (r *Requester) doRequest(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) (err error) {
 	t1 := time.Now()
-	var err error
-	if r.clientOpt.doTimeout > 0 {
-		err = r.httpClient.DoTimeout(req, rsp, r.clientOpt.doTimeout)
-	} else {
-		err = r.httpClient.Do(req, rsp)
-	}
-
+	err = r.httpClientDo(req, rsp)
 	rr.cost = time.Since(t1)
 	if err != nil {
-		rr.code = ""
-		rr.error = err.Error()
-		return
+		return err
 	}
 
-	rr.code = parseCodeNxx(rsp, r.statusName)
-
+	rr.code = []string{parseCodeNxx(rsp, r.statusName)}
 	if r.verbose >= 1 {
-		rr.conn = rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()
+		rr.conn = []string{rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()}
 	}
 	if r.logf != nil {
-		err = r.logDetail(req, rsp, rr)
-	} else {
-		err = rsp.BodyWriteTo(ioutil.Discard)
+		return r.logDetail(req, rsp, rr)
 	}
 
-	if err != nil {
-		rr.error = err.Error()
-	} else {
-		rr.error = ""
-	}
+	return rsp.BodyWriteTo(ioutil.Discard)
 }
 
 func (r *Requester) logDetail(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) error {
-	r.logfLock.Lock()
-	defer r.logfLock.Unlock()
+	b := &bytes.Buffer{}
+	defer r.logf.Write(b)
 
-	_, _ = r.logf.WriteString(fmt.Sprintf("### %s time: %s cost: %s\n",
-		rr.conn, time.Now().Format(time.RFC3339Nano), rr.cost))
+	conn := rsp.LocalAddr().String() + "->" + rsp.RemoteAddr().String()
+	_, _ = b.WriteString(fmt.Sprintf("### %s time: %s cost: %s\n",
+		conn, time.Now().Format(time.RFC3339Nano), rr.cost))
 
-	bw := bufio.NewWriter(r.logf)
+	bw := bufio.NewWriter(b)
 	_ = req.Write(bw)
 	_ = bw.Flush()
-	_, _ = r.logf.Write([]byte("\n\n"))
+	_, _ = b.Write([]byte("\n"))
 
-	_, _ = r.logf.Write(rsp.Header.Header())
+	_, _ = b.Write(rsp.Header.Header())
 
 	if string(rsp.Header.Peek("Content-Encoding")) == "gzip" {
-		body, err := rsp.BodyGunzip()
+		bodyGunzip, err := rsp.BodyGunzip()
 		if err != nil {
 			return err
 		}
-		r.logf.Write(body)
+		b.Write(bodyGunzip)
 	} else {
-		if err := rsp.BodyWriteTo(r.logf); err != nil {
+		if err := rsp.BodyWriteTo(b); err != nil {
 			return err
 		}
 	}
 
-	_, _ = r.logf.Write([]byte("\n\n"))
-
+	_, _ = b.Write([]byte("\n\n"))
 	return nil
 }
 
 func parseCodeNxx(resp *fasthttp.Response, statusName string) string {
 	if statusName == "" {
-		statusCode := strconv.Itoa(resp.StatusCode())
-		return statusCode[:1] + "xx"
+		return strconv.Itoa(resp.StatusCode())
 	}
 
 	return jj.GetBytes(resp.Body(), statusName).String()
@@ -378,6 +373,14 @@ func (r *Requester) Run() {
 		})
 	}
 
+	if r.clientOpt.doTimeout > 0 {
+		r.httpClientDo = func(req *fasthttp.Request, rsp *fasthttp.Response) error {
+			return r.httpClient.DoTimeout(req, rsp, r.clientOpt.doTimeout)
+		}
+	} else {
+		r.httpClientDo = r.httpClient.Do
+	}
+
 	semaphore := r.requests
 	for i := 0; i < r.concurrency; i++ {
 		r.wg.Add(1)
@@ -389,16 +392,21 @@ func (r *Requester) Run() {
 					panic(v)
 				}
 			}()
-			req := &fasthttp.Request{}
-			resp := &fasthttp.Response{}
-			r.httpHeader.CopyTo(&req.Header)
-			if r.httpClient.IsTLS {
-				req.URI().SetScheme("https")
-				req.URI().SetHostBytes(req.Header.Host())
-			}
+			req := fasthttp.AcquireRequest()
+			resp := fasthttp.AcquireResponse()
+			defer fasthttp.ReleaseRequest(req)
+			defer fasthttp.ReleaseResponse(resp)
 
-			if *enableGzip {
-				req.Header.Set("Accept-Encoding", "gzip")
+			if len(r.profiles) == 0 {
+				r.httpHeader.CopyTo(&req.Header)
+				if r.httpClient.IsTLS {
+					req.URI().SetScheme("https")
+					req.URI().SetHostBytes(req.Header.Host())
+				}
+
+				if *enableGzip {
+					req.Header.Set("Accept-Encoding", "gzip")
+				}
 			}
 
 			throttle := func() {}
@@ -407,13 +415,7 @@ func (r *Requester) Run() {
 				throttle = func() { <-t }
 			}
 
-			for {
-				select {
-				case <-r.ctx.Done():
-					return
-				default:
-				}
-
+			for r.ctx.Err() == nil {
 				if r.requests > 0 && atomic.AddInt64(&semaphore, -1) < 0 {
 					r.cancel()
 					return
@@ -421,51 +423,22 @@ func (r *Requester) Run() {
 
 				throttle()
 
-				if r.clientOpt.bodyFile != "" {
-					file, err := os.Open(r.clientOpt.bodyFile)
-					if err != nil {
-						rr := recordPool.Get().(*ReportRecord)
-						rr.cost = 0
-						rr.error = err.Error()
-						rr.readBytes = atomic.LoadInt64(&r.readBytes)
-						rr.writeBytes = atomic.LoadInt64(&r.writeBytes)
-						r.recordChan <- rr
-						continue
-					}
-					req.SetBodyStream(file, -1)
-				} else if r.upload != "" {
-					file := <-r.uploadChan
-					data, cType, err := readMultipartFile(r.noUploadCache, r.uploadFileField, file)
-					if err != nil {
-						panic(err)
-					}
-					setHeader(req, "Content-Type", cType)
-					req.SetBody(data)
-				} else {
-					bodyBytes := r.clientOpt.bodyBytes
-
-					if *enableGzip {
-						var buf bytes.Buffer
-						zw := gzip.NewWriter(&buf)
-						zw.Write(bodyBytes)
-						zw.Close()
-						if v := buf.Bytes(); len(v) < len(bodyBytes) {
-							bodyBytes = v
-							req.Header.Set("Content-Encoding", "gzip")
-						}
-					}
-
-					req.SetBodyRaw(bodyBytes)
-				}
-				resp.Reset()
 				rr := recordPool.Get().(*ReportRecord)
-				r.DoRequest(req, resp, rr)
-				rr.readBytes = atomic.LoadInt64(&r.readBytes)
-				rr.writeBytes = atomic.LoadInt64(&r.writeBytes)
-				r.recordChan <- rr
-				if r.think != nil {
-					r.think.Think(true)
+				rr.Reset()
+
+				if r.logf != nil {
+					r.logf.MarkPos()
 				}
+
+				if len(r.profiles) == 0 {
+					r.runOne(req, resp, rr)
+				} else {
+					r.runProfiles(req, resp, rr)
+				}
+
+				r.recordChan <- rr
+
+				r.thinking()
 			}
 		}()
 	}
@@ -474,9 +447,104 @@ func (r *Requester) Run() {
 	r.closeRecord()
 }
 
-// setHeader set request header if value is not empty.
-func setHeader(r *fasthttp.Request, header, value string) {
-	if value != "" {
-		r.Header.Set(header, value)
+func (r *Requester) runOne(req *fasthttp.Request, resp *fasthttp.Response, rr *ReportRecord) *ReportRecord {
+	closers, err := r.setBody(req)
+	defer closers.Close()
+
+	if err == nil {
+		err = r.doRequest(req, resp, rr)
 	}
+
+	if err != nil {
+		rr.error = err.Error()
+	}
+
+	rr.readBytes = atomic.LoadInt64(&r.readBytes)
+	rr.writeBytes = atomic.LoadInt64(&r.writeBytes)
+	return rr
+}
+
+func (r *Requester) runProfiles(req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) {
+	for _, p := range r.profiles {
+		if err := r.runOneProfile(p, req, rsp, rr); err != nil {
+			rr.error = err.Error()
+			return
+		}
+
+		if rsp.StatusCode() < 200 || rsp.StatusCode() > 300 {
+			return
+		}
+
+		req.Reset()
+		rsp.Reset()
+	}
+}
+
+func (r *Requester) runOneProfile(p *profile.Profile, req *fasthttp.Request, rsp *fasthttp.Response, rr *ReportRecord) error {
+	closers, err := p.CreateReq(r.httpClient, req, *enableGzip)
+	defer closers.Close()
+
+	if err != nil {
+		return err
+	}
+
+	t1 := time.Now()
+	err = r.httpClientDo(req, rsp)
+	rr.cost += time.Since(t1)
+	if err != nil {
+		return err
+	}
+
+	rr.code = append(rr.code, parseCodeNxx(rsp, r.statusName))
+	if r.verbose >= 1 {
+		rr.conn = append(rr.conn, rsp.LocalAddr().String()+"->"+rsp.RemoteAddr().String())
+	}
+	if r.logf != nil {
+		return r.logDetail(req, rsp, rr)
+	}
+
+	return rsp.BodyWriteTo(ioutil.Discard)
+}
+
+func (r *Requester) thinking() {
+	if r.think != nil {
+		r.think.Think(true)
+	}
+}
+
+func (r *Requester) setBody(req *fasthttp.Request) (util.Closers, error) {
+	if r.clientOpt.bodyFile != "" {
+		file, err := os.Open(r.clientOpt.bodyFile)
+		if err != nil {
+			return nil, err
+		}
+		req.SetBodyStream(file, -1)
+		return []io.Closer{file}, nil
+	}
+	if r.upload != "" {
+		file := <-r.uploadChan
+		data, cType, err := util.ReadMultipartFile(r.noUploadCache, r.uploadFileField, file)
+		if err != nil {
+			panic(err)
+		}
+		util.SetHeader(req, "Content-Type", cType)
+		req.SetBody(data)
+		return nil, nil
+	}
+
+	bodyBytes := r.clientOpt.bodyBytes
+
+	if *enableGzip {
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf)
+		zw.Write(bodyBytes)
+		zw.Close()
+		if v := buf.Bytes(); len(v) < len(bodyBytes) {
+			bodyBytes = v
+			req.Header.Set("Content-Encoding", "gzip")
+		}
+	}
+
+	req.SetBodyRaw(bodyBytes)
+	return nil, nil
 }

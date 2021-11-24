@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"regexp"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bingoohuang/blow/util"
 
 	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
@@ -67,7 +68,7 @@ func (p *Printer) updateProgressValue(rs *SnapshotReport) {
 }
 
 func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Duration, useSeconds, onlyResultJson bool,
-	doneChan <-chan struct{}, requests int64, logf *os.File) {
+	doneChan <-chan struct{}, requests int64, logf *util.LogFile) {
 	if requests == 0 {
 		select {}
 	}
@@ -75,7 +76,7 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 	stdout := os.Stdout
 
 	var echo func(isFinal bool)
-	var buf bytes.Buffer
+	buf := &bytes.Buffer{}
 
 	if onlyResultJson {
 		echo = func(isFinal bool) {
@@ -84,7 +85,7 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 			}
 
 			r := snapshot()
-			result := p.formatTableReports(&buf, r, true, useSeconds)
+			result := p.formatTableReports(buf, r, true, useSeconds)
 			resultJson, _ := json.Marshal(result)
 			stdout.Write(resultJson)
 			stdout.Write([]byte("\n"))
@@ -97,7 +98,7 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 			stdout.WriteString(backCursor)
 
 			buf.Reset()
-			p.formatTableReports(&buf, r, isFinal, useSeconds)
+			p.formatTableReports(buf, r, isFinal, useSeconds)
 
 			n := printLines(buf.Bytes(), stdout)
 			backCursor = fmt.Sprintf("\033[%dA", n)
@@ -117,24 +118,24 @@ func (p *Printer) PrintLoop(snapshot func() *SnapshotReport, interval time.Durat
 
 	if requests == 1 && logf != nil {
 		r := snapshot()
-		if p.printError(&buf, r) {
+		if p.printError(buf, r) {
 			stdout.Write(buf.Bytes())
 		} else {
 			tag := If(p.upload == "", "### ", "HTTP/1")
-			if lastLog := getLastLog(logf, tag); lastLog != "" {
+			if lastLog := logf.GetLastLog(tag); lastLog != "" {
 				stdout.WriteString(lastLog)
 			}
 		}
 
 		buf.Reset()
 		var summary SummaryReport
-		writeBulk(&buf, p.buildSummary(r, true, &summary))
+		writeBulk(buf, p.buildSummary(r, true, &summary))
 		stdout.Write(buf.Bytes())
 	}
 
 	if logf != nil {
 		logf.WriteString(p.desc + " at " + time.Now().Format(`20060102150405`) + "\n\n")
-		_, _ = logf.Write(buf.Bytes())
+		logf.Write(buf)
 		_ = logf.Close()
 	}
 }
@@ -158,37 +159,6 @@ func tick(interval time.Duration, echo func(), doneChan <-chan struct{}) {
 			return
 		}
 	}
-}
-
-func getLastLog(f *os.File, tag string) string {
-	found := false
-	ch := make([]byte, len(tag))
-	var cursor int64
-	for {
-		cursor--
-		_, err := f.Seek(cursor, io.SeekEnd)
-		if err != nil {
-			return ""
-		}
-
-		n, err := f.Read(ch)
-		if err != nil {
-			return ""
-		}
-
-		if n == len(tag) && string(ch) == tag { // stop if we find last log
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return ""
-	}
-
-	buffer := make([]byte, -cursor)
-	n, _ := f.Read(buffer)
-	return "\n" + tag + string(buffer[:n])
 }
 
 func printLines(result []byte, stdout *os.File) int {
