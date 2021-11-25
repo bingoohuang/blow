@@ -263,7 +263,7 @@ func parseProfileArg(profileArg []string) []*profile.Profile {
 
 		for _, p1 := range pp {
 			if tag == nil || tag.Contains(p1.Tag) {
-				profiles = append(profiles, pp...)
+				profiles = append(profiles, p1)
 			}
 		}
 	}
