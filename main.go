@@ -21,7 +21,7 @@ var (
 	flag = kingpin.Flag
 
 	concurrency = flag("concurrency", "#connections to run concurrently").Short('c').Default("100").Int()
-	requests    = flag("requests", "#requests to run").Short('n').Default("-1").Int64()
+	requests    = flag("requests", "#requests to run").Short('n').Default("0").Int64()
 	duration    = flag("duration", "Duration of test, examples: -d10s -d3m").Short('d').PlaceHolder("DURATION").Duration()
 	verbose     = flag("verbose", "v: Show connections in summary. vv: Log requests and response details to file").Short('v').Counter()
 	thinkTime   = flag("think", "Think time among requests, eg. 1s, 10ms, 10-20ms and etc. (unit ns, us/µs, ms, s, m, h)").PlaceHolder("DURATION").String()
@@ -216,7 +216,7 @@ func main() {
 	go requester.Run()
 
 	// metrics collection
-	report := NewStreamReport(*concurrency, *verbose)
+	report := NewStreamReport()
 	go report.Collect(requester.RecordChan())
 
 	if ln != nil {

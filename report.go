@@ -96,10 +96,9 @@ type StreamReport struct {
 	writeBytes int64
 
 	doneChan chan struct{}
-	verbose  int
 }
 
-func NewStreamReport(maxConns int, verbose int) *StreamReport {
+func NewStreamReport() *StreamReport {
 	return &StreamReport{
 		latencyQuantile:  quantile.NewTargeted(quantilesTarget),
 		latencyHistogram: histogram.New(8),
@@ -110,7 +109,6 @@ func NewStreamReport(maxConns int, verbose int) *StreamReport {
 		latencyStats:     &Stats{},
 		rpsStats:         &Stats{},
 		latencyWithinSec: &Stats{},
-		verbose:          verbose,
 	}
 }
 
