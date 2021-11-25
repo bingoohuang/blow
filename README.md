@@ -11,7 +11,7 @@ net/http due to its lightning fast performance.
 
 Features:
 
-1. TODO: support [hurl format](https://github.com/Orange-OpenSource/hurl)
+1. support profile like [hurl format](https://github.com/Orange-OpenSource/hurl) at 2021-11-25.
 2. test with detail request and response printing by `-n1`
 3. enable web service by `-v`
 4. enable logging for requests and responses details by `-vv`
