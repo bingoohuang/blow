@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/axiomhq/hyperloglog"
 	"github.com/beorn7/perks/histogram"
 	"github.com/beorn7/perks/quantile"
 )
@@ -84,7 +85,7 @@ type StreamReport struct {
 	latencyHistogram *histogram.Histogram
 	codes            map[string]int64
 	errors           map[string]int64
-	conns            map[string]struct{}
+	conns            *hyperloglog.Sketch
 
 	latencyWithinSec *Stats
 	rpsWithinSec     float64
@@ -92,7 +93,6 @@ type StreamReport struct {
 
 	readBytes  int64
 	writeBytes int64
-	totalConns int64
 
 	doneChan chan struct{}
 	verbose  int
@@ -105,7 +105,7 @@ func NewStreamReport(maxConns int, verbose int) *StreamReport {
 		codes:            make(map[string]int64, 1),
 		errors:           make(map[string]int64, 1),
 		doneChan:         make(chan struct{}, 1),
-		conns:            make(map[string]struct{}, maxConns),
+		conns:            hyperloglog.New16(),
 		latencyStats:     &Stats{},
 		rpsStats:         &Stats{},
 		latencyWithinSec: &Stats{},
@@ -168,10 +168,7 @@ func (s *StreamReport) Collect(records <-chan *ReportRecord) {
 			s.errors[r.error]++
 		}
 		for _, conn := range r.conn {
-			if _, ok := s.conns[conn]; !ok {
-				s.totalConns++
-				s.conns[conn] = struct{}{}
-			}
+			s.conns.Insert([]byte(conn))
 		}
 		r.conn = nil
 		s.readBytes = r.readBytes
@@ -235,7 +232,7 @@ func (s *StreamReport) Snapshot() *SnapshotReport {
 	rs.RPS = float64(rs.Count) / elapseInSec
 	rs.ReadThroughput = float64(s.readBytes) / 1024. / 1024. / elapseInSec
 	rs.WriteThroughput = float64(s.writeBytes) / 1024. / 1024. / elapseInSec
-	rs.Connections = s.totalConns
+	rs.Connections = int64(s.conns.Estimate())
 	rs.ElapseInSec = elapseInSec
 
 	rs.Codes = make(map[string]int64, len(s.codes))
