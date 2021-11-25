@@ -14,6 +14,20 @@ import (
 	"go.uber.org/multierr"
 )
 
+func Quoted(s, open, close string) (string, bool) {
+	p1 := strings.Index(s, open)
+	if p1 != 0 {
+		return "", false
+	}
+
+	s = s[len(open):]
+	if !strings.HasSuffix(s, close) {
+		return "", false
+	}
+
+	return strings.TrimSuffix(s, close), true
+}
+
 func MergeCodes(codes []string) string {
 	n := 0
 	last := ""

@@ -12,7 +12,7 @@ func TestParseProfiles(t *testing.T) {
 ###
 GET http://127.0.0.1:1080
 
-###
+### [tag=2]
 POST http://127.0.0.1:1080
 Bingoo-Name: bingoohuang
 {"name": "bingoohuang", "age": 1000}
@@ -35,12 +35,17 @@ Bingoo-Name: bingoohuang
 			Query:   map[string]string{},
 		},
 		{
-			Comments: []string{"###"}, Method: "POST", URL: "http://127.0.0.1:1080/",
+			Comments: []string{"### [tag=2]"}, Method: "POST", URL: "http://127.0.0.1:1080/",
 			Header:  map[string]string{"Bingoo-Name": "bingoohuang"},
 			Form:    map[string]string{},
 			RawJSON: map[string]string{},
 			Query:   map[string]string{},
 			Body:    `{"name": "bingoohuang", "age": 1000}`,
+			Option: Option{
+				Tag:      "2",
+				Eval:     false,
+				JsonBody: true,
+			},
 		},
 	}, profiles)
 }

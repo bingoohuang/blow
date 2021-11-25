@@ -33,7 +33,7 @@ var (
 	method      = flag("method", "HTTP method").Short('m').String()
 	network     = flag("network", "Network simulation, local: simulates local network, lan: local, wan: wide, bad: bad network, or BPS:latency like 20M:20ms").String()
 	headers     = flag("header", "Custom HTTP headers").Short('H').PlaceHolder("K:V").Strings()
-	profileArg  = flag("profile", "Profile file, append :new to create a demo profile").Short('P').Strings()
+	profileArg  = flag("profile", "Profile file, append :new to create a demo profile, or :tag to run only specified profile").Short('P').Strings()
 	host        = flag("host", "Host header").String()
 	enableGzip  = flag("gzip", "Enabled gzip if gzipped content is less more").Bool()
 	basicAuth   = flag("user", "basic auth username:password").String()
@@ -174,7 +174,6 @@ func main() {
 	}
 
 	profiles := parseProfileArg(*profileArg)
-
 	requester, err := NewRequester(*concurrency, *verbose, *requests, *duration, &clientOpt, *statusName, profiles)
 	if err != nil {
 		util.Exit(err.Error())
@@ -238,6 +237,7 @@ func main() {
 func parseProfileArg(profileArg []string) []*profile.Profile {
 	var profiles []*profile.Profile
 	hasNew := false
+	var tag *util.Tag
 	for _, p := range profileArg {
 		if strings.HasSuffix(p, ":new") {
 			name := p[:len(p)-4]
@@ -245,6 +245,11 @@ func parseProfileArg(profileArg []string) []*profile.Profile {
 			fmt.Printf("profile file %s created\n", name)
 			hasNew = true
 			continue
+		}
+
+		if tagPos := strings.LastIndex(p, ":"); tagPos > 0 {
+			tag = util.ParseTag(p[tagPos+1:])
+			p = p[:tagPos]
 		}
 
 		if !filex.Exists(p) {
@@ -256,7 +261,11 @@ func parseProfileArg(profileArg []string) []*profile.Profile {
 			util.Exit(err.Error())
 		}
 
-		profiles = append(profiles, pp...)
+		for _, p1 := range pp {
+			if tag == nil || tag.Contains(p1.Tag) {
+				profiles = append(profiles, pp...)
+			}
+		}
 	}
 	if hasNew {
 		os.Exit(0)

@@ -42,6 +42,14 @@ func (p *Profile) CreateReq(client *fasthttp.HostClient, req *fasthttp.Request, 
 
 	if len(p.bodyFileData) > 0 {
 		bodyBytes := p.bodyFileData
+		if p.Eval {
+			if p.JsonBody {
+				bodyBytes = []byte(util.Gen(string(bodyBytes), util.SureJSON))
+			} else {
+				bodyBytes = []byte(util.Gen(string(bodyBytes), util.MayJSON))
+			}
+		}
+
 		if enableGzip {
 			var buf bytes.Buffer
 			zw := gzip.NewWriter(&buf)
@@ -125,14 +133,21 @@ func (p *Profile) makeQuery(query url.Values) url.Values {
 	return query
 }
 
+type Option struct {
+	Tag      string
+	Eval     bool
+	JsonBody bool
+}
+
 type Profile struct {
-	Method   string
-	URL      string
-	Query    map[string]string
-	RawJSON  map[string]string
-	Form     map[string]string
-	Header   map[string]string
-	Body     string
+	Method  string
+	URL     string
+	Query   map[string]string
+	RawJSON map[string]string
+	Form    map[string]string
+	Header  map[string]string
+	Body    string
+	Option
 	Comments []string
 
 	requestHeader *fasthttp.RequestHeader
@@ -141,24 +156,61 @@ type Profile struct {
 }
 
 const DemoProfile = `
-###
+### [tag=1]
 GET http://127.0.0.1:5003/status
 
-###
+### [tag=2]
 POST http://127.0.0.1:5003/dynamic/demo
 {"name": "bingoo"}
 
-###
+### [tag=3]
 POST http://127.0.0.1:5003/dynamic/demo
 {"name": "huang"}
 
-###
+### [tag=4]
 POST http://127.0.0.1:5003/dynamic/demo
 {"name": "ding", "age": 10}
 
-###
+### [tag=5]
 POST http://127.0.0.1:5003/dynamic/demo
 {"name": "ding", "age": 20}
+
+### [tag=6 eval]
+POST http://127.0.0.1:5003/dynamic/demo
+{
+  "uuid": "@uuid",
+  "uid": "@ksuid",
+  "id": "@objectId",
+  "sex": "@random(male,female)",
+  "image": "@random_image(format=png size=320x240)",
+  "base64": "@base64(size=100 raw url)",
+  "name": "@name",
+  "汉字": "@汉字",
+  "姓名": "@姓名",
+  "gender": "@性别",
+  "addr": "@地址",
+  "mobile": "@手机",
+  "chinaID": "@身份证",
+  "issueOrg": "@发证机关",
+  "email": "@邮箱",
+  "bankCardNo": "@银行卡",
+  "id2": "@random(red,green,blue)",
+  "id3": "@random(1,2,3)",
+  "id4": "@regex([abc]{10})",
+  "id5": "@random_int",
+  "id6": "@random_int(100-999)",
+  "id7": "Hello@random_int(100-999)",
+  "ok": "@random_bool",
+  "day1": "@random_time",
+  "day2": "@random_time(yyyy-MM-dd)",
+  "day3": "@random_time(now, yyyy-MM-dd)",
+  "day4": "@random_time(now, yyyy-MM-dd)",
+  "day5": "@random_time(now, yyyy-MM-ddTHH:mm:ss)",
+  "day6": "@random_time(yyyy-MM-dd,1990-01-01,2021-06-06)",
+  "day7": "@random_time(sep=# yyyy-MM-dd#1990-01-01#2021-06-06)",
+  "uid": "@uuid"
+}
+
 `
 
 func ParseProfileFile(baseUrl string, fileName string) ([]*Profile, error) {
@@ -209,6 +261,8 @@ func parseRequests(baseUrl string, buf *bufio.Reader) (profiles []*Profile, err 
 	return
 }
 
+var tagRegexp = regexp.MustCompile(`\[.+]`)
+
 func postProcessProfiles(profiles []*Profile) error {
 	for _, p := range profiles {
 		if len(p.Body) > 0 {
@@ -216,6 +270,17 @@ func postProcessProfiles(profiles []*Profile) error {
 
 			if p.Header[ContentTypeName] == "" && jj.Valid(p.Body) {
 				p.Header[ContentTypeName] = ContentTypeJSON
+			}
+
+			p.JsonBody = p.Header[ContentTypeName] == ContentTypeJSON
+		}
+
+		if len(p.Comments) > 0 {
+			for _, c := range p.Comments {
+				subs := tagRegexp.FindStringSubmatch(c)
+				for _, sub := range subs {
+					jj.ParseConf(sub[1:len(sub)-1], &p.Option)
+				}
 			}
 		}
 
@@ -236,6 +301,12 @@ var headerReg = regexp.MustCompile(`(^\w+(?:-\w+)*)(==|:=|=|:|@)\s*(.*)$`)
 var lastComments []string
 
 func processLine(p *Profile, baseUrl, l string) *Profile {
+	if option, ok := util.Quoted(l, "[", "]"); ok {
+		if p != nil {
+			jj.ParseConf(option, &p.Option)
+		}
+		return p
+	}
 	if m, ok := hasAnyPrefix(strings.ToUpper(l),
 		"GET", "HEAD", "POST", "PUT",
 		"PATCH", "DELETE", "CONNECT", "OPTIONS", "TRACE"); ok {
@@ -248,7 +319,7 @@ func processLine(p *Profile, baseUrl, l string) *Profile {
 			Form:     map[string]string{},
 			RawJSON:  map[string]string{},
 		}
-		lastComments = lastComments[:0]
+		lastComments = nil
 		return p1
 	}
 
@@ -258,7 +329,7 @@ func processLine(p *Profile, baseUrl, l string) *Profile {
 	}
 
 	p.Comments = append(p.Comments, lastComments...)
-	lastComments = lastComments[:0]
+	lastComments = nil
 
 	if len(p.Body) == 0 {
 		if subs := headerReg.FindStringSubmatch(l); len(subs) > 0 {

@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/bingoohuang/blow/util"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/bingoohuang/blow/util"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/beorn7/perks/histogram"

@@ -6,8 +6,8 @@ require (
 	github.com/AdhityaRamadhanus/fasthttpcors v0.0.0-20170121111917-d4c07198763a
 	github.com/axiomhq/hyperloglog v0.0.0-20211021164851-7f2dfa314bc7
 	github.com/beorn7/perks v1.0.1
-	github.com/bingoohuang/gg v0.0.0-20211112132045-1f18ede092bb
-	github.com/bingoohuang/jj v0.0.0-20211112140655-43116361f931
+	github.com/bingoohuang/gg v0.0.0-20211118031105-819d456e7da9
+	github.com/bingoohuang/jj v0.0.0-20211125042349-4752d135093f
 	github.com/dustin/go-humanize v1.0.0
 	github.com/go-echarts/go-echarts/v2 v2.2.4
 	github.com/karrick/godirwalk v1.16.1
@@ -23,6 +23,7 @@ require (
 
 require (
 	github.com/BurntSushi/toml v0.4.1 // indirect
+	github.com/Pallinder/go-randomdata v1.2.0 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a // indirect
 	github.com/andybalholm/brotli v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
